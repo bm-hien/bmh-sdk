@@ -1,8 +1,8 @@
-# `@bmh/bot`
+# `@bmhien/bot`
 
 [![CI](https://github.com/bm-hien/bmh-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/bm-hien/bmh-sdk/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@bmh/bot)](https://www.npmjs.com/package/@bmh/bot)
-[![license](https://img.shields.io/npm/l/@bmh/bot)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@bmhien/bot)](https://www.npmjs.com/package/@bmhien/bot)
+[![license](https://img.shields.io/npm/l/@bmhien/bot)](./LICENSE)
 
 Typed Telegram Bot SDK shared by BMH Code, Visual Flow, webhooks, and local
 long polling. It targets Node.js 20 or newer and other runtimes that provide
@@ -11,7 +11,7 @@ the Web Fetch APIs (`fetch`, `Request`, `Response`, `FormData`, and `Blob`).
 ## Install
 
 ```bash
-npm install @bmh/bot
+npm install @bmhien/bot
 ```
 
 To test the unreleased `main` branch directly, npm can install the public
@@ -24,7 +24,7 @@ npm install github:bm-hien/bmh-sdk
 ## Create a bot
 
 ```ts
-import { Bot } from '@bmh/bot';
+import { Bot } from '@bmhien/bot';
 
 const bot = new Bot();
 
@@ -56,7 +56,7 @@ you switch between hosted webhooks and local polling.
 ## Run locally with long polling
 
 ```ts
-import { Bot, TelegramClient, runTelegramPolling } from '@bmh/bot';
+import { Bot, TelegramClient, runTelegramPolling } from '@bmhien/bot';
 
 const bot = new Bot();
 const telegram = new TelegramClient(process.env.TELEGRAM_BOT_TOKEN!);
@@ -87,7 +87,7 @@ import {
   Bot,
   TelegramClient,
   createTelegramWebhookHandler,
-} from '@bmh/bot';
+} from '@bmhien/bot';
 
 const bot = new Bot();
 const telegram = new TelegramClient(process.env.TELEGRAM_BOT_TOKEN!);

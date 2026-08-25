@@ -32,19 +32,19 @@ try {
   const tarball = join(new URL(root).pathname, packed.filename);
   await exec('npm', ['init', '--yes'], { cwd: temporary });
   await exec('npm', ['install', tarball], { cwd: temporary });
-  const esm = await exec('node', ['--input-type=module', '--eval', "import { Bot, TELEGRAM_METHODS } from '@bmh/bot'; if (!(new Bot()) || TELEGRAM_METHODS.length !== 185) process.exit(1);"], { cwd: temporary });
+  const esm = await exec('node', ['--input-type=module', '--eval', `import { Bot, TELEGRAM_METHODS } from '${manifest.name}'; if (!(new Bot()) || TELEGRAM_METHODS.length !== 185) process.exit(1);`], { cwd: temporary });
   assert.equal(esm.stderr, '');
-  const cjs = await exec('node', ['--eval', "const { Bot, TELEGRAM_UPDATE_TYPES } = require('@bmh/bot'); if (!(new Bot()) || TELEGRAM_UPDATE_TYPES.length !== 27) process.exit(1);"], { cwd: temporary });
+  const cjs = await exec('node', ['--eval', `const { Bot, TELEGRAM_UPDATE_TYPES } = require('${manifest.name}'); if (!(new Bot()) || TELEGRAM_UPDATE_TYPES.length !== 27) process.exit(1);`], { cwd: temporary });
   assert.equal(cjs.stderr, '');
   await writeFile(join(temporary, 'consumer.mts'), [
-    "import { Bot, TelegramClient, type TelegramUpdate } from '@bmh/bot';",
+    `import { Bot, TelegramClient, type TelegramUpdate } from '${manifest.name}';`,
     "const bot: Bot = new Bot().command('start', (ctx) => ctx.reply('Hello'));",
     "const client = new TelegramClient('123:test');",
     "const update: TelegramUpdate = { update_id: 1 };",
     'void bot; void client; void update;',
   ].join('\n'));
   await writeFile(join(temporary, 'consumer.cts'), [
-    "import sdk = require('@bmh/bot');",
+    `import sdk = require('${manifest.name}');`,
     'const bot: sdk.Bot = new sdk.Bot();',
     'void bot;',
   ].join('\n'));
@@ -63,7 +63,7 @@ try {
   const tsc = fileURLToPath(new URL('../node_modules/typescript/bin/tsc', import.meta.url));
   const declarations = await exec(process.execPath, [tsc, '--project', 'tsconfig.json'], { cwd: temporary });
   assert.equal(declarations.stderr, '');
-  const installedManifest = JSON.parse(await readFile(join(temporary, 'node_modules/@bmh/bot/package.json'), 'utf8'));
+  const installedManifest = JSON.parse(await readFile(join(temporary, 'node_modules', ...manifest.name.split('/'), 'package.json'), 'utf8'));
   assert.equal(installedManifest.name, manifest.name);
   assert.equal(installedManifest.version, manifest.version);
   console.log(`Verified ${packed.filename}: contents, clean installation, ESM/CommonJS runtime, and declarations.`);

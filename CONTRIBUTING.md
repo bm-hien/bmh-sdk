@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve `@bmh/bot`.
+Thank you for helping improve `@bmhien/bot`.
 
 ## Requirements
 

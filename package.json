@@ -1,5 +1,5 @@
 {
-  "name": "@bmh/bot",
+  "name": "@bmhien/bot",
   "version": "0.1.0",
   "description": "Typed Telegram Bot SDK for BMH code, Visual Flow, webhooks, and local polling.",
   "license": "MIT",

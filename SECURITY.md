@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest published version of `@bmh/bot`.
+Security fixes are provided for the latest published version of `@bmhien/bot`.
 
 ## Report a vulnerability
 
