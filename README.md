@@ -14,6 +14,13 @@ the Web Fetch APIs (`fetch`, `Request`, `Response`, `FormData`, and `Blob`).
 npm install @bmh/bot
 ```
 
+To test the unreleased `main` branch directly, npm can install the public
+repository and build it locally:
+
+```bash
+npm install github:bm-hien/bmh-sdk
+```
+
 ## Create a bot
 
 ```ts
