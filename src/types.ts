@@ -12,6 +12,8 @@ export type BotContext = {
   userId?: string;
   messageId?: string;
   messageThreadId?: string;
+  draftId?: string;
+  businessConnectionId?: string;
   callbackQueryId?: string;
   callbackData?: string;
   inlineQueryId?: string;

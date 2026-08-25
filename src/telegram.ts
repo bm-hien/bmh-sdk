@@ -269,6 +269,13 @@ export type TelegramInvoiceOptions = {
 };
 export const TELEGRAM_FORUM_TOPIC_ICON_COLORS = [7322096, 16766590, 13338331, 9367192, 16749490, 16478047] as const;
 export type TelegramForumTopicIconColor = typeof TELEGRAM_FORUM_TOPIC_ICON_COLORS[number];
+export type TelegramForumTopic = {
+  message_thread_id: number;
+  name: string;
+  icon_color: number;
+  icon_custom_emoji_id?: string;
+  is_name_implicit?: true;
+};
 export type TelegramCreateForumTopicOptions = {
   iconColor?: TelegramForumTopicIconColor;
   iconCustomEmojiId?: string;
@@ -277,6 +284,33 @@ export type TelegramEditForumTopicOptions = {
   name?: string;
   /** Pass null or an empty string to remove the custom icon. */
   iconCustomEmojiId?: string | null;
+};
+export type TelegramMessageDraftOptions = {
+  messageThreadId?: number;
+  parseMode?: TelegramParseMode;
+  canStop?: boolean;
+  keepOnStop?: boolean;
+};
+export type TelegramInputChecklistTask = {
+  id: number;
+  text: string;
+  parseMode?: TelegramParseMode;
+};
+export type TelegramInputChecklist = {
+  title: string;
+  tasks: TelegramInputChecklistTask[];
+  parseMode?: TelegramParseMode;
+  othersCanAddTasks?: boolean;
+  othersCanMarkTasksAsDone?: boolean;
+};
+export type TelegramSendChecklistOptions = {
+  businessConnectionId?: string;
+  disableNotification?: boolean;
+  protectContent?: boolean;
+};
+export type TelegramEditChecklistOptions = {
+  businessConnectionId?: string;
+  messageId?: string | number;
 };
 
 function telegramQueryId(value: string, label: string) {
@@ -525,6 +559,151 @@ export function buildTelegramForumTopicTarget(
   return { chat_id: telegramForumChatId(chatId), message_thread_id: telegramForumThreadId(threadId) };
 }
 
+export function buildTelegramMessageDraft(
+  chatId: TelegramChatId,
+  draftId: number,
+  text: string,
+  options: TelegramMessageDraftOptions = {},
+): TelegramMethodParams['sendMessageDraft'] {
+  const chat_id = Number(chatId);
+  if (!Number.isSafeInteger(chat_id) || chat_id <= 0) {
+    throw new Error('Telegram message drafts require a private-chat user ID.');
+  }
+  if (!Number.isSafeInteger(draftId) || draftId === 0) {
+    throw new Error('Telegram message draft ID must be a non-zero safe integer.');
+  }
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error('Telegram message draft options must be an object.');
+  }
+  const optionKeys = new Set(['messageThreadId', 'parseMode', 'canStop', 'keepOnStop']);
+  const unknownOption = Object.keys(options).find((key) => !optionKeys.has(key));
+  if (unknownOption) throw new Error(`Unsupported Telegram message draft option: ${unknownOption}.`);
+  if (options.parseMode !== undefined && options.parseMode !== 'HTML' && options.parseMode !== 'MarkdownV2') {
+    throw new Error('Telegram message draft parse mode must be HTML or MarkdownV2.');
+  }
+  if (options.canStop !== undefined && typeof options.canStop !== 'boolean') {
+    throw new Error('Telegram message draft canStop must be boolean.');
+  }
+  if (options.keepOnStop !== undefined && typeof options.keepOnStop !== 'boolean') {
+    throw new Error('Telegram message draft keepOnStop must be boolean.');
+  }
+  const content = String(text ?? '');
+  if (Array.from(content).length > 4096) throw new Error('Telegram message draft text must be 0-4096 characters.');
+  const messageThreadId = options.messageThreadId;
+  if (messageThreadId !== undefined && (!Number.isSafeInteger(messageThreadId) || messageThreadId <= 0)) {
+    throw new Error('Telegram message draft thread ID must be a positive safe integer.');
+  }
+  return {
+    chat_id, draft_id: draftId, text: content,
+    ...(messageThreadId === undefined ? {} : { message_thread_id: messageThreadId }),
+    ...(options.parseMode === undefined ? {} : { parse_mode: options.parseMode }),
+    ...(options.canStop === undefined ? {} : { can_stop: options.canStop }),
+    ...(options.keepOnStop === undefined ? {} : { keep_on_stop: options.keepOnStop }),
+  };
+}
+
+function telegramChecklistParseMode(value: unknown, label: string) {
+  if (value === undefined) return undefined;
+  if (value !== 'HTML' && value !== 'MarkdownV2') throw new Error(`${label} must be HTML or MarkdownV2.`);
+  return value;
+}
+
+export function buildTelegramChecklist(value: TelegramInputChecklist) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Telegram checklist must be an object.');
+  const keys = new Set(['title', 'tasks', 'parseMode', 'othersCanAddTasks', 'othersCanMarkTasksAsDone']);
+  const unknownKey = Object.keys(value).find((key) => !keys.has(key));
+  if (unknownKey) throw new Error(`Unsupported Telegram checklist field: ${unknownKey}.`);
+  const title = telegramInvoiceText(value.title, 'Telegram checklist title', 1, 255);
+  const parseMode = telegramChecklistParseMode(value.parseMode, 'Telegram checklist parse mode');
+  if (!Array.isArray(value.tasks) || value.tasks.length < 1 || value.tasks.length > 30) {
+    throw new Error('Telegram checklists require 1-30 tasks.');
+  }
+  const ids = new Set<number>();
+  const tasks = value.tasks.map((task, index) => {
+    if (!task || typeof task !== 'object' || Array.isArray(task)) {
+      throw new Error(`Telegram checklist task ${index + 1} must be an object.`);
+    }
+    const taskKeys = new Set(['id', 'text', 'parseMode']);
+    const unknownTaskKey = Object.keys(task).find((key) => !taskKeys.has(key));
+    if (unknownTaskKey) throw new Error(`Unsupported Telegram checklist task field: ${unknownTaskKey}.`);
+    const id = telegramPositiveInteger(task.id, `Telegram checklist task ${index + 1} ID`);
+    if (ids.has(id)) throw new Error('Telegram checklist task IDs must be unique.');
+    ids.add(id);
+    const taskParseMode = telegramChecklistParseMode(task.parseMode, `Telegram checklist task ${index + 1} parse mode`);
+    return {
+      id,
+      text: telegramInvoiceText(task.text, `Telegram checklist task ${index + 1} text`, 1, 100),
+      ...(taskParseMode === undefined ? {} : { parse_mode: taskParseMode }),
+    };
+  });
+  for (const [key, item] of [
+    ['othersCanAddTasks', value.othersCanAddTasks],
+    ['othersCanMarkTasksAsDone', value.othersCanMarkTasksAsDone],
+  ] as const) {
+    if (item !== undefined && typeof item !== 'boolean') throw new Error(`Telegram checklist ${key} must be boolean.`);
+  }
+  return {
+    title, tasks,
+    ...(parseMode === undefined ? {} : { parse_mode: parseMode }),
+    ...(value.othersCanAddTasks === undefined ? {} : { others_can_add_tasks: value.othersCanAddTasks }),
+    ...(value.othersCanMarkTasksAsDone === undefined ? {} : { others_can_mark_tasks_as_done: value.othersCanMarkTasksAsDone }),
+  };
+}
+
+function telegramChecklistConnectionId(value: unknown) {
+  const id = String(value ?? '').trim();
+  if (!id) throw new Error('Telegram checklists require a business connection ID.');
+  return id;
+}
+
+function telegramChecklistChatId(value: TelegramChatId) {
+  const chatId = typeof value === 'number' ? value : String(value ?? '').trim();
+  if (chatId === '' || (typeof chatId === 'number' && (!Number.isSafeInteger(chatId) || chatId === 0))) {
+    throw new Error('Telegram checklists require a valid destination chat.');
+  }
+  return chatId;
+}
+
+export function buildTelegramChecklistSend(
+  businessConnectionId: string,
+  chatId: TelegramChatId,
+  checklist: TelegramInputChecklist,
+  options: Pick<TelegramSendChecklistOptions, 'disableNotification' | 'protectContent'> = {},
+): TelegramMethodParams['sendChecklist'] {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Telegram checklist options must be an object.');
+  const allowedOptions = new Set(['disableNotification', 'protectContent']);
+  const unknownOption = Object.keys(options).find((key) => !allowedOptions.has(key));
+  if (unknownOption) throw new Error(`Unsupported Telegram checklist option: ${unknownOption}.`);
+  if (options.disableNotification !== undefined && typeof options.disableNotification !== 'boolean') {
+    throw new Error('Telegram checklist disableNotification must be boolean.');
+  }
+  if (options.protectContent !== undefined && typeof options.protectContent !== 'boolean') {
+    throw new Error('Telegram checklist protectContent must be boolean.');
+  }
+  return {
+    business_connection_id: telegramChecklistConnectionId(businessConnectionId),
+    chat_id: telegramChecklistChatId(chatId),
+    checklist: buildTelegramChecklist(checklist),
+    ...(options.disableNotification === undefined ? {} : { disable_notification: options.disableNotification }),
+    ...(options.protectContent === undefined ? {} : { protect_content: options.protectContent }),
+  };
+}
+
+export function buildTelegramChecklistEdit(
+  businessConnectionId: string,
+  chatId: TelegramChatId,
+  messageId: string | number,
+  checklist: TelegramInputChecklist,
+): TelegramMethodParams['editMessageChecklist'] {
+  const message_id = Number(messageId);
+  if (!Number.isSafeInteger(message_id) || message_id <= 0) throw new Error('Telegram checklist edits require a positive message ID.');
+  return {
+    business_connection_id: telegramChecklistConnectionId(businessConnectionId),
+    chat_id: telegramChecklistChatId(chatId), message_id,
+    checklist: buildTelegramChecklist(checklist),
+  };
+}
+
 export function buildTelegramInlineQueryAnswer(
   inlineQueryId: string,
   values: TelegramInlineQueryResult[],
@@ -669,6 +848,8 @@ export type TelegramMethodParams = {
   sendContact: TelegramSendContactParams;
   sendPoll: TelegramSendPollParams;
   sendDice: TelegramSendOptions & { chat_id: TelegramChatId; emoji?: string };
+  sendMessageDraft: { chat_id: number; draft_id: number; text?: string; message_thread_id?: number; parse_mode?: TelegramParseMode; entities?: TelegramMessageEntity[]; can_stop?: boolean; keep_on_stop?: boolean };
+  sendChecklist: { business_connection_id: string; chat_id: TelegramChatId; checklist: ReturnType<typeof buildTelegramChecklist>; disable_notification?: boolean; protect_content?: boolean; message_effect_id?: string; reply_parameters?: Record<string, unknown>; reply_markup?: TelegramInlineKeyboardMarkup };
   sendInvoice: TelegramSendOptions & {
     chat_id: TelegramChatId; title: string; description: string; payload: string; provider_token?: string;
     currency: string; prices: TelegramLabeledPrice[]; max_tip_amount?: number; suggested_tip_amounts?: number[];
@@ -683,6 +864,7 @@ export type TelegramMethodParams = {
   forwardMessage: { chat_id: TelegramChatId; from_chat_id: TelegramChatId; message_id: number; disable_notification?: boolean; protect_content?: boolean };
   copyMessage: { chat_id: TelegramChatId; from_chat_id: TelegramChatId; message_id: number; caption?: string; parse_mode?: TelegramParseMode };
   editMessageText: { chat_id?: TelegramChatId; message_id?: number; inline_message_id?: string; text: string; parse_mode?: TelegramParseMode; reply_markup?: TelegramInlineKeyboardMarkup };
+  editMessageChecklist: { business_connection_id: string; chat_id: TelegramChatId; message_id: number; checklist: ReturnType<typeof buildTelegramChecklist>; reply_markup?: TelegramInlineKeyboardMarkup };
   deleteMessage: { chat_id: TelegramChatId; message_id: number };
   deleteMessages: { chat_id: TelegramChatId; message_ids: number[] };
   answerCallbackQuery: { callback_query_id: string; text?: string; show_alert?: boolean; url?: string; cache_time?: number };
@@ -741,6 +923,9 @@ export interface TelegramApi {
   sendContact(phoneNumber: string, firstName: string, lastName?: string): Promise<unknown>;
   sendPoll(question: string, options: string[], anonymous?: boolean): Promise<unknown>;
   sendDice(emoji?: string): Promise<unknown>;
+  sendMessageDraft(draftId: number, text?: string, options?: TelegramMessageDraftOptions): Promise<boolean>;
+  sendChecklist(checklist: TelegramInputChecklist, options?: TelegramSendChecklistOptions): Promise<TelegramMessage>;
+  editChecklist(checklist: TelegramInputChecklist, options?: TelegramEditChecklistOptions): Promise<TelegramMessage>;
   sendInvoice(invoice: TelegramInvoiceOptions): Promise<unknown>;
   sendButtons(text: string, buttons: TelegramInlineButton[]): Promise<unknown>;
   editMessage(text: string, messageId?: string): Promise<unknown>;
@@ -753,7 +938,7 @@ export interface TelegramApi {
   answerGuestQuery(result: TelegramInlineQueryResult): Promise<unknown>;
   refundStarPayment(chargeId?: string, userId?: string): Promise<unknown>;
   editStarSubscription(canceled: boolean, chargeId?: string, userId?: string): Promise<unknown>;
-  createForumTopic(name: string, options?: TelegramCreateForumTopicOptions): Promise<unknown>;
+  createForumTopic(name: string, options?: TelegramCreateForumTopicOptions): Promise<TelegramForumTopic>;
   editForumTopic(options: TelegramEditForumTopicOptions, messageThreadId?: string | number): Promise<unknown>;
   closeForumTopic(messageThreadId?: string | number): Promise<unknown>;
   reopenForumTopic(messageThreadId?: string | number): Promise<unknown>;

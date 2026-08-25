@@ -87,6 +87,25 @@ supported. Recursive imports, unresolved exports, more than 20 nested levels,
 and more than 200 compiled steps are rejected. Moving a module in the BMH file
 explorer rewrites resolvable relative imports when the project is saved.
 
+Visual-safe functions can capture selected action results and reuse their fields
+in later nodes. HTTP captures expose `status`, `ok`, and `body`; Telegram API and
+forum-topic captures expose the Bot API result directly:
+
+```ts
+export const openSupportTopic = defineFlowFunction('Open support topic', async (ctx) => {
+  const topic = await ctx.telegram.createForumTopic('Support');
+  await ctx.reply('Created topic {{result.topic.message_thread_id}}');
+
+  const lookup = await ctx.http.request('https://api.example.com/user', { method: 'GET' });
+  await ctx.reply('User: {{result.lookup.body.name}}');
+});
+```
+
+The Canvas **Save result as** field creates the same declaration. Result scopes
+are isolated per matching trigger. Names must be safe identifiers up to 32
+characters; HTTP bodies are capped at 64 KB and captured templates are bounded
+by depth, field count, and value length.
+
 Project barrels are supported too. A function may be imported through an
 `index.ts` that uses `export { internalName as publicName } from './module'` or
 `export * from './module'`; generated code keeps the public import path and
@@ -181,6 +200,46 @@ await ctx.telegram.setDefaultPermissions({
 });
 ```
 
+For generated output in a private chat, `sendMessageDraft()` shows an ephemeral
+partial response and can expose Telegram's Stop button. Drafts expire after
+about 30 seconds, so always send the final message afterward:
+
+```ts
+await ctx.telegram.sendMessageDraft(1, 'Thinking…', {
+  canStop: true,
+  keepOnStop: true,
+});
+const answer = await createAnswer(ctx.text ?? '');
+await ctx.reply(answer);
+```
+
+Listen for `stopped_message_generation` to cancel your own generation task when
+the user presses Stop; `ctx.draftId` identifies the exact generation to cancel.
+Reuse the same non-zero draft ID when updating a preview.
+
+Telegram Business updates also expose `ctx.businessConnectionId`. The checklist
+helpers inherit that connection and the current chat/message automatically:
+
+```ts
+bot.on('business_message', async (ctx) => {
+  const checklistMessage = await ctx.telegram.sendChecklist({
+    title: 'Launch tasks',
+    tasks: [{ id: 1, text: 'Review' }, { id: 2, text: 'Ship' }],
+    othersCanMarkTasksAsDone: true,
+  });
+
+  await ctx.telegram.editChecklist({
+    title: 'Updated tasks',
+    tasks: [{ id: 1, text: 'Shipped' }],
+  }, { messageId: checklistMessage.message_id });
+});
+```
+
+Checklist titles are limited to 1–255 characters. Each checklist contains 1–30
+tasks with unique positive IDs and 1–100 characters of task text. Both helpers
+return a typed `TelegramMessage`; pass `businessConnectionId` explicitly only
+when acting outside the current Business update.
+
 Answerable query updates also have context-aware helpers, so query IDs never
 need to be copied out of the raw update:
 
@@ -265,6 +324,10 @@ await ctx.telegram.deleteForumTopic();
 
 Topic names and Telegram's six supported icon colors are validated locally.
 Pass `iconCustomEmojiId: null` to `editForumTopic()` to remove a custom icon.
+`createForumTopic()` returns a typed `TelegramForumTopic`, including its
+`message_thread_id`, name, icon color, optional custom emoji, and implicit-name
+flag. Generic `telegram.call<M, T>()` also accepts an explicit result type for
+specialist methods.
 
 `leaveChat()` is terminal in Visual Flow: it must be the last action on its
 path, and the runtime stops downstream work after the bot leaves.
@@ -294,6 +357,8 @@ Every handler receives a normalized `BotContext`:
 - `ctx.update` and `ctx.updateType` retain the typed raw update and its type.
 - `ctx.text`, `ctx.messageId`, `ctx.messageThreadId`, and `ctx.callbackData`
   expose common values.
+- `ctx.draftId` identifies the stopped generation preview, while
+  `ctx.businessConnectionId` identifies the current Telegram Business session.
 - `ctx.inlineQueryId`, `ctx.shippingQueryId`, `ctx.preCheckoutQueryId`, and
   `ctx.guestQueryId` identify answerable query lifecycles.
 - `ctx.successfulPayment` contains the normalized completed invoice, including

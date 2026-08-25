@@ -7,6 +7,8 @@ import type {
   TelegramApi,
   TelegramChatAction,
   TelegramChatPermissions,
+  TelegramForumTopic,
+  TelegramMessage,
   TelegramMethod,
   TelegramParamsFor,
   TelegramParseMode,
@@ -22,6 +24,9 @@ import {
   buildTelegramForumTopicCreate,
   buildTelegramForumTopicEdit,
   buildTelegramForumTopicTarget,
+  buildTelegramChecklistEdit,
+  buildTelegramChecklistSend,
+  buildTelegramMessageDraft,
   buildTelegramGuestQueryAnswer,
   buildTelegramInlineQueryAnswer,
   buildTelegramPreCheckoutQueryAnswer,
@@ -315,6 +320,8 @@ export function createTelegramContext(
     userId: event.user?.id,
     messageId: event.messageId,
     messageThreadId: event.messageThreadId,
+    draftId: event.draftId,
+    businessConnectionId: event.businessConnectionId,
     callbackQueryId: event.callbackQueryId,
     callbackData: event.callbackData,
     inlineQueryId: event.inlineQueryId,
@@ -410,6 +417,45 @@ export function createTelegramContext(
     sendDice(emoji) {
       return client.call('sendDice', { chat_id: requireChat(), ...(emoji ? { emoji } : {}), ...sendDefaults });
     },
+    sendMessageDraft(draftId, text = '', draftOptions = {}) {
+      if (event.chat?.type !== 'private') throw new Error('Telegram message drafts are available only in private chats.');
+      const currentThread = event.messageThreadId ? Number(event.messageThreadId) : undefined;
+      return client.call<'sendMessageDraft', boolean>('sendMessageDraft', buildTelegramMessageDraft(
+        requireChat(), draftId, text, {
+          ...draftOptions,
+          messageThreadId: draftOptions.messageThreadId ?? currentThread,
+          parseMode: draftOptions.parseMode ?? options.parseMode,
+        },
+      ));
+    },
+    sendChecklist(checklist, actionOptions = {}) {
+      if (!actionOptions || typeof actionOptions !== 'object' || Array.isArray(actionOptions)) {
+        throw new Error('Telegram sendChecklist options must be an object.');
+      }
+      const unsupported = Object.keys(actionOptions).find((key) => ![
+        'businessConnectionId', 'disableNotification', 'protectContent',
+      ].includes(key));
+      if (unsupported) throw new Error(`Unsupported Telegram checklist option: ${unsupported}.`);
+      return client.call<'sendChecklist', TelegramMessage>('sendChecklist', buildTelegramChecklistSend(
+        actionOptions.businessConnectionId || event.businessConnectionId || '', requireChat(), checklist, {
+          disableNotification: actionOptions.disableNotification ?? options.disableNotification,
+          protectContent: actionOptions.protectContent ?? options.protectContent,
+        },
+      ));
+    },
+    editChecklist(checklist, actionOptions = {}) {
+      if (!actionOptions || typeof actionOptions !== 'object' || Array.isArray(actionOptions)) {
+        throw new Error('Telegram editChecklist options must be an object.');
+      }
+      const unsupported = Object.keys(actionOptions).find((key) => ![
+        'businessConnectionId', 'messageId',
+      ].includes(key));
+      if (unsupported) throw new Error(`Unsupported Telegram checklist edit option: ${unsupported}.`);
+      return client.call<'editMessageChecklist', TelegramMessage>('editMessageChecklist', buildTelegramChecklistEdit(
+        actionOptions.businessConnectionId || event.businessConnectionId || '', requireChat(),
+        actionOptions.messageId ?? event.messageId ?? '', checklist,
+      ));
+    },
     sendInvoice(invoice) {
       return client.call('sendInvoice', buildTelegramInvoice(requireChat(), {
         ...invoice,
@@ -492,7 +538,9 @@ export function createTelegramContext(
       ));
     },
     createForumTopic(name, topicOptions) {
-      return client.call('createForumTopic', buildTelegramForumTopicCreate(requireChat(), name, topicOptions));
+      return client.call<'createForumTopic', TelegramForumTopic>(
+        'createForumTopic', buildTelegramForumTopicCreate(requireChat(), name, topicOptions),
+      );
     },
     editForumTopic(topicOptions, messageThreadId) {
       return client.call('editForumTopic', buildTelegramForumTopicEdit(

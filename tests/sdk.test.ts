@@ -140,6 +140,13 @@ test('parser normalizes commands, mentions, captions, callbacks, and chatless up
   assert.equal(pollAnswer?.updateType, 'poll_answer');
   assert.equal(pollAnswer?.user?.id, '99');
   assert.equal(pollAnswer?.chatId, undefined);
+
+  const stopped = parseTelegramUpdate({
+    update_id: 4,
+    stopped_message_generation: { chat: { id: 7, type: 'private' }, message_thread_id: 12, draft_id: -91 },
+  });
+  assert.equal(stopped?.draftId, '-91');
+  assert.equal(stopped?.messageThreadId, '12');
 });
 
 test('parser exposes dedicated lifecycle IDs for inline, shipping, pre-checkout, and guest queries', () => {
@@ -352,8 +359,11 @@ test('forum-topic helpers default to the current thread and validate Telegram to
   const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
   const client = new TelegramClient('123:test', {
     fetch: async (input, init) => {
-      requests.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
-      return json(true);
+      const method = String(input).split('/').at(-1)!;
+      requests.push({ method, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(method === 'createForumTopic'
+        ? { message_thread_id: 91, name: 'Support', icon_color: 7322096 }
+        : true);
     },
   });
   const update = messageUpdate(40, 'topic');
@@ -361,7 +371,9 @@ test('forum-topic helpers default to the current thread and validate Telegram to
   const context = createTelegramContext(update, client);
   assert.ok(context);
   assert.equal(context.messageThreadId, '77');
-  await context.telegram.createForumTopic('Support', { iconColor: 7322096 });
+  const topic = await context.telegram.createForumTopic('Support', { iconColor: 7322096 });
+  assert.equal(topic.message_thread_id, 91);
+  assert.equal(topic.name, 'Support');
   await context.telegram.editForumTopic({ name: 'Help desk', iconCustomEmojiId: null });
   await context.telegram.closeForumTopic();
   await context.telegram.reopenForumTopic('88');
@@ -380,6 +392,97 @@ test('forum-topic helpers default to the current thread and validate Telegram to
   assert.throws(() => context.telegram.editForumTopic({}), /require a name or icon change/);
   const noThread = createTelegramContext(messageUpdate(41, 'no thread'), client)!;
   assert.throws(() => noThread.telegram.closeForumTopic(), /message thread ID/);
+});
+
+test('message drafts validate private-chat streaming previews and return typed success', async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      requests.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(true);
+    },
+  });
+  const update = messageUpdate(42, 'generate');
+  update.message!.chat = { id: 7, type: 'private', first_name: 'Minh' };
+  update.message!.message_thread_id = 12;
+  const context = createTelegramContext(update, client, { parseMode: 'HTML' })!;
+  const sent = await context.telegram.sendMessageDraft(-91, '<b>Working</b>', { canStop: true, keepOnStop: true });
+  assert.equal(sent, true);
+  assert.deepEqual(requests, [{ method: 'sendMessageDraft', body: {
+    chat_id: 7, draft_id: -91, text: '<b>Working</b>', message_thread_id: 12,
+    parse_mode: 'HTML', can_stop: true, keep_on_stop: true,
+  } }]);
+  assert.throws(() => context.telegram.sendMessageDraft(0), /non-zero safe integer/);
+  assert.throws(() => context.telegram.sendMessageDraft(1, 'x'.repeat(4097)), /0-4096/);
+  assert.throws(() => context.telegram.sendMessageDraft(1, '', { messageThreadId: 0 }), /positive safe integer/);
+  assert.throws(() => context.telegram.sendMessageDraft(1, '', { unsupported: true } as never), /Unsupported Telegram message draft option/);
+  assert.throws(() => createTelegramContext(messageUpdate(43), client)!.telegram.sendMessageDraft(1), /private chats/);
+  const stoppedContext = createTelegramContext({
+    update_id: 44,
+    stopped_message_generation: { chat: { id: 7, type: 'private' }, draft_id: -91 },
+  }, client)!;
+  assert.equal(stoppedContext.draftId, '-91');
+});
+
+test('Business checklist helpers inherit update context and validate the complete input contract', async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      const method = String(input).split('/').at(-1)!;
+      requests.push({ method, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json({ message_id: method === 'sendChecklist' ? 501 : 500, date: 1, chat: { id: 7, type: 'private' } });
+    },
+  });
+  const context = createTelegramContext({
+    update_id: 45,
+    business_message: {
+      business_connection_id: 'business-45', message_id: 500, date: 1,
+      chat: { id: 7, type: 'private' }, from: telegramUser(), text: 'tasks',
+    },
+  }, client, { disableNotification: false, protectContent: false })!;
+  assert.equal(context.businessConnectionId, 'business-45');
+
+  const sent = await context.telegram.sendChecklist({
+    title: 'Launch tasks',
+    tasks: [{ id: 1, text: 'Review' }, { id: 2, text: 'Ship', parseMode: 'HTML' }],
+    othersCanAddTasks: true, othersCanMarkTasksAsDone: true,
+  }, { disableNotification: true, protectContent: true });
+  assert.equal(sent.message_id, 501);
+  const edited = await context.telegram.editChecklist({
+    title: 'Updated tasks', tasks: [{ id: 1, text: 'Shipped' }],
+  });
+  assert.equal(edited.message_id, 500);
+  assert.deepEqual(requests, [
+    { method: 'sendChecklist', body: {
+      business_connection_id: 'business-45', chat_id: '7',
+      checklist: {
+        title: 'Launch tasks',
+        tasks: [{ id: 1, text: 'Review' }, { id: 2, text: 'Ship', parse_mode: 'HTML' }],
+        others_can_add_tasks: true, others_can_mark_tasks_as_done: true,
+      },
+      disable_notification: true, protect_content: true,
+    } },
+    { method: 'editMessageChecklist', body: {
+      business_connection_id: 'business-45', chat_id: '7', message_id: 500,
+      checklist: { title: 'Updated tasks', tasks: [{ id: 1, text: 'Shipped' }] },
+    } },
+  ]);
+
+  assert.throws(() => context.telegram.sendChecklist({
+    title: 'Tasks', tasks: [{ id: 1, text: 'One' }, { id: 1, text: 'Duplicate' }],
+  }), /task IDs must be unique/);
+  assert.throws(() => context.telegram.sendChecklist({ title: 'Tasks', tasks: [] }), /require 1-30 tasks/);
+  assert.throws(() => context.telegram.sendChecklist({ title: 'x'.repeat(256), tasks: [{ id: 1, text: 'One' }] }), /title must be 1-255/);
+  assert.throws(() => context.telegram.sendChecklist({ title: 'Tasks', tasks: [{ id: 1, text: 'x'.repeat(101) }] }), /text must be 1-100/);
+  assert.throws(() => context.telegram.sendChecklist({ title: 'Tasks', tasks: [{ id: 1, text: 'One' }] }, {
+    unsupported: true,
+  } as never), /Unsupported Telegram checklist option/);
+  assert.throws(() => context.telegram.editChecklist({ title: 'Tasks', tasks: [{ id: 1, text: 'One' }] }, {
+    messageId: 0,
+  }), /positive message ID/);
+  assert.throws(() => createTelegramContext(messageUpdate(46), client)!.telegram.sendChecklist({
+    title: 'Tasks', tasks: [{ id: 1, text: 'One' }],
+  }), /business connection ID/);
 });
 
 test('chatless callback context can answer and edit inline messages but cannot reply', async () => {

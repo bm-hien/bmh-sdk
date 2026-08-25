@@ -11,6 +11,8 @@ export type ParsedTelegramUpdate = {
   chatId?: string;
   messageId?: string;
   messageThreadId?: string;
+  draftId?: string;
+  businessConnectionId?: string;
   callbackQueryId?: string;
   callbackData?: string;
   inlineMessageId?: string;
@@ -122,6 +124,7 @@ function parseMessage(updateType: TelegramUpdateType, message: Record<string, un
     chatId,
     messageId: stringId(message.message_id),
     messageThreadId: stringId(message.message_thread_id),
+    businessConnectionId: stringId(message.business_connection_id),
     guestQueryId: updateType === 'guest_message' ? stringId(message.guest_query_id) : undefined,
     successfulPayment,
     user: userFields(from),
@@ -149,6 +152,9 @@ function parseGeneric(updateType: TelegramUpdateType, payload: Record<string, un
     chatId: stringId(chat?.id),
     messageId: stringId(payload.message_id ?? nestedMessage?.message_id),
     messageThreadId: stringId(payload.message_thread_id ?? nestedMessage?.message_thread_id),
+    draftId: updateType === 'stopped_message_generation' ? stringId(payload.draft_id) : undefined,
+    businessConnectionId: stringId(payload.business_connection_id
+      ?? (updateType === 'business_connection' ? payload.id : undefined)),
     inlineQueryId: updateType === 'inline_query' ? stringId(payload.id) : undefined,
     shippingQueryId: updateType === 'shipping_query' ? stringId(payload.id) : undefined,
     preCheckoutQueryId: updateType === 'pre_checkout_query' ? stringId(payload.id) : undefined,
