@@ -28,5 +28,11 @@ jobs:
         run: node scripts/verify-release.mjs "$GITHUB_REF_NAME"
       - name: Check SDK
         run: npm run check
+      - name: Check registry version
+        id: registry
+        run: node scripts/check-registry.mjs >> "$GITHUB_OUTPUT"
       - name: Publish to npm
+        if: steps.registry.outputs.published != 'true'
         run: npm publish --access public
+      - name: Verify registry version
+        run: node scripts/check-registry.mjs --require
