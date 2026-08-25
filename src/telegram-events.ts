@@ -1,15 +1,24 @@
-import { TELEGRAM_UPDATE_TYPES, type TelegramChat, type TelegramUpdate, type TelegramUpdateType } from './telegram';
+import {
+  TELEGRAM_UPDATE_TYPES, type TelegramChat, type TelegramEventType, type TelegramSuccessfulPayment,
+  type TelegramUpdate, type TelegramUpdateType,
+} from './telegram';
 
 export type ParsedTelegramUpdate = {
-  kind: 'command' | TelegramUpdateType;
+  kind: 'command' | TelegramEventType;
   updateType: TelegramUpdateType;
   command?: string;
   text: string;
   chatId?: string;
   messageId?: string;
+  messageThreadId?: string;
   callbackQueryId?: string;
   callbackData?: string;
   inlineMessageId?: string;
+  inlineQueryId?: string;
+  shippingQueryId?: string;
+  preCheckoutQueryId?: string;
+  guestQueryId?: string;
+  successfulPayment?: TelegramSuccessfulPayment;
   user?: { id?: string; firstName?: string; username?: string };
   chat?: { id?: string; type?: TelegramChat['type']; title?: string; username?: string };
 };
@@ -54,6 +63,24 @@ function chatFields(raw: Record<string, unknown> | null) {
   };
 }
 
+function successfulPaymentFields(raw: Record<string, unknown> | null): TelegramSuccessfulPayment | undefined {
+  if (!raw || typeof raw.currency !== 'string' || !Number.isSafeInteger(raw.total_amount)
+    || typeof raw.invoice_payload !== 'string' || typeof raw.telegram_payment_charge_id !== 'string'
+    || typeof raw.provider_payment_charge_id !== 'string') return undefined;
+  return {
+    currency: raw.currency,
+    total_amount: Number(raw.total_amount),
+    invoice_payload: raw.invoice_payload,
+    telegram_payment_charge_id: raw.telegram_payment_charge_id,
+    provider_payment_charge_id: raw.provider_payment_charge_id,
+    ...(typeof raw.shipping_option_id === 'string' ? { shipping_option_id: raw.shipping_option_id } : {}),
+    ...(object(raw.order_info) ? { order_info: object(raw.order_info)! } : {}),
+    ...(typeof raw.is_recurring === 'boolean' ? { is_recurring: raw.is_recurring } : {}),
+    ...(typeof raw.is_first_recurring === 'boolean' ? { is_first_recurring: raw.is_first_recurring } : {}),
+    ...(Number.isSafeInteger(raw.subscription_expiration_date) ? { subscription_expiration_date: Number(raw.subscription_expiration_date) } : {}),
+  };
+}
+
 function parseCallback(callback: Record<string, unknown>): ParsedTelegramUpdate | null {
   const message = object(callback.message);
   const chat = object(message?.chat);
@@ -67,6 +94,7 @@ function parseCallback(callback: Record<string, unknown>): ParsedTelegramUpdate 
     text: callbackData,
     chatId: stringId(chat?.id),
     messageId: stringId(message?.message_id),
+    messageThreadId: stringId(message?.message_thread_id),
     callbackQueryId,
     callbackData,
     inlineMessageId: typeof callback.inline_message_id === 'string' ? callback.inline_message_id : undefined,
@@ -85,13 +113,17 @@ function parseMessage(updateType: TelegramUpdateType, message: Record<string, un
   const commandMatch = updateType === 'message'
     ? text.trim().match(/^\/([A-Za-z0-9_]+)(?:@[A-Za-z0-9_]+)?(?:\s|$)/)
     : null;
+  const successfulPayment = updateType === 'message' ? successfulPaymentFields(object(message.successful_payment)) : undefined;
   return {
-    kind: commandMatch ? 'command' : updateType,
+    kind: commandMatch ? 'command' : successfulPayment ? 'successful_payment' : updateType,
     updateType,
     command: commandMatch?.[1],
     text: text || caption,
     chatId,
     messageId: stringId(message.message_id),
+    messageThreadId: stringId(message.message_thread_id),
+    guestQueryId: updateType === 'guest_message' ? stringId(message.guest_query_id) : undefined,
+    successfulPayment,
     user: userFields(from),
     chat: chatFields(chat),
   };
@@ -116,6 +148,10 @@ function parseGeneric(updateType: TelegramUpdateType, payload: Record<string, un
     text,
     chatId: stringId(chat?.id),
     messageId: stringId(payload.message_id ?? nestedMessage?.message_id),
+    messageThreadId: stringId(payload.message_thread_id ?? nestedMessage?.message_thread_id),
+    inlineQueryId: updateType === 'inline_query' ? stringId(payload.id) : undefined,
+    shippingQueryId: updateType === 'shipping_query' ? stringId(payload.id) : undefined,
+    preCheckoutQueryId: updateType === 'pre_checkout_query' ? stringId(payload.id) : undefined,
     user: userFields(user),
     chat: chatFields(chat),
   };

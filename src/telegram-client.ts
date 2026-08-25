@@ -1,16 +1,37 @@
 import type { Bot } from './bot';
+import { runFlowFunction } from './functions';
 import { parseTelegramUpdate, type ParsedTelegramUpdate } from './telegram-events';
 import type { BotContext } from './types';
 import type {
+  TelegramAdministratorRights,
   TelegramApi,
   TelegramChatAction,
+  TelegramChatPermissions,
   TelegramMethod,
   TelegramParamsFor,
   TelegramParseMode,
   TelegramUpdate,
   TelegramUpdateType,
 } from './telegram';
-import { TELEGRAM_METHODS, TELEGRAM_UPDATE_TYPES } from './telegram';
+import {
+  TELEGRAM_ADMINISTRATOR_RIGHT_FIELDS,
+  TELEGRAM_CHAT_PERMISSION_FIELDS,
+  TELEGRAM_METHODS,
+  TELEGRAM_UPDATE_TYPES,
+  buildTelegramInvoice,
+  buildTelegramForumTopicCreate,
+  buildTelegramForumTopicEdit,
+  buildTelegramForumTopicTarget,
+  buildTelegramGuestQueryAnswer,
+  buildTelegramInlineQueryAnswer,
+  buildTelegramPreCheckoutQueryAnswer,
+  buildTelegramShippingQueryAnswer,
+  buildTelegramStarRefund,
+  buildTelegramStarSubscriptionEdit,
+} from './telegram';
+
+const telegramChatPermissionFields = new Set<string>(TELEGRAM_CHAT_PERMISSION_FIELDS);
+const telegramAdministratorRightFields = new Set<string>(TELEGRAM_ADMINISTRATOR_RIGHT_FIELDS);
 
 export { parseTelegramUpdate } from './telegram-events';
 export type { ParsedTelegramUpdate } from './telegram-events';
@@ -167,6 +188,12 @@ function currentMessageId(context: Pick<BotContext, 'messageId'>, configured?: s
   return id;
 }
 
+function currentMessageThreadId(context: Pick<BotContext, 'messageThreadId'>, configured?: string | number) {
+  const id = Number(configured || context.messageThreadId || '');
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('A valid Telegram message thread ID is required.');
+  return id;
+}
+
 function telegramText(value: string, label: string, maximum: number, minimum = 1) {
   const text = String(value ?? '');
   const length = Array.from(text).length;
@@ -185,6 +212,57 @@ function locationCoordinate(value: number, label: string, minimum: number, maxim
     throw new Error(`${label} must be between ${minimum} and ${maximum}.`);
   }
   return value;
+}
+
+function telegramUserId(value: string) {
+  const result = Number(requiredText(value, 'Telegram user ID'));
+  if (!Number.isSafeInteger(result) || result <= 0) throw new Error('Telegram user ID must be a positive safe integer.');
+  return result;
+}
+
+function optionalUnixDate(value: number | undefined, label: string) {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be a non-negative Unix timestamp.`);
+  return value;
+}
+
+function booleanTelegramFields(
+  value: Record<string, boolean>,
+  label: string,
+  validKey: (key: string) => boolean,
+) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  const entries = Object.entries(value);
+  if (!entries.length || entries.some(([key, allowed]) => !validKey(key) || typeof allowed !== 'boolean')) {
+    throw new Error(`${label} require at least one supported boolean field.`);
+  }
+  return value;
+}
+
+function chatPermissions(value: TelegramChatPermissions) {
+  return booleanTelegramFields(value as Record<string, boolean>, 'Telegram chat permissions', (key) => telegramChatPermissionFields.has(key)) as TelegramChatPermissions;
+}
+
+function administratorRights(value: TelegramAdministratorRights) {
+  return booleanTelegramFields(value as Record<string, boolean>, 'Telegram administrator rights', (key) => telegramAdministratorRightFields.has(key)) as TelegramAdministratorRights;
+}
+
+function messageIds(values: Array<string | number>) {
+  if (!Array.isArray(values) || values.length < 1 || values.length > 100) {
+    throw new Error('Telegram deleteMessages requires 1-100 message IDs.');
+  }
+  const result = values.map((value) => Number(value));
+  if (result.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    throw new Error('Telegram message IDs must be positive safe integers.');
+  }
+  if (new Set(result).size !== result.length) throw new Error('Telegram message IDs must be unique.');
+  return result;
+}
+
+function memberLabel(value: string, label: string) {
+  const result = telegramText(value.trim(), label, 16, 0);
+  if (/\p{Extended_Pictographic}/u.test(result)) throw new Error(`${label} cannot contain emoji.`);
+  return result;
 }
 
 function evaluateWhen(expression: string, text: string) {
@@ -220,8 +298,15 @@ export function createTelegramContext(
     ...(caption && options.parseMode ? { parse_mode: options.parseMode } : {}),
     ...sendDefaults,
   });
+  const answeredQueries = new Set<string>();
+  const answerQuery = async (key: string, request: () => Promise<unknown>) => {
+    if (answeredQueries.has(key)) throw new Error('This Telegram query has already been answered by the current update handler.');
+    answeredQueries.add(key);
+    try { return await request(); }
+    catch (error) { answeredQueries.delete(key); throw error; }
+  };
 
-  const context = {
+  const context: BotContext = {
     platform: 'telegram' as const,
     update,
     updateType: event.updateType,
@@ -229,8 +314,14 @@ export function createTelegramContext(
     chatId: event.chatId,
     userId: event.user?.id,
     messageId: event.messageId,
+    messageThreadId: event.messageThreadId,
     callbackQueryId: event.callbackQueryId,
     callbackData: event.callbackData,
+    inlineQueryId: event.inlineQueryId,
+    shippingQueryId: event.shippingQueryId,
+    preCheckoutQueryId: event.preCheckoutQueryId,
+    guestQueryId: event.guestQueryId,
+    successfulPayment: event.successfulPayment,
     user: event.user ? {
       ...event.user,
       raw: (message?.from ?? update.callback_query?.from) as never,
@@ -253,14 +344,18 @@ export function createTelegramContext(
       },
     },
     telegram: {} as TelegramApi,
+    run(flowFunction) { return runFlowFunction(flowFunction, context); },
     async step(type: string) { throw new Error(`Local runtime does not have an adapter for ${type}.`); },
-  } satisfies BotContext;
+  };
 
   context.telegram = {
     call<M extends TelegramMethod, T = unknown>(method: M, params: TelegramParamsFor<M>) {
       return client.call<M, T>(method, params);
     },
     sendPhoto(photo, caption) { return client.call('sendPhoto', captionBody('photo', photo, caption) as never); },
+    sendSticker(sticker, emoji) {
+      return client.call('sendSticker', { chat_id: requireChat(), sticker: requiredText(sticker, 'Telegram sticker'), ...(emoji ? { emoji } : {}), ...sendDefaults });
+    },
     sendDocument(document, caption) { return client.call('sendDocument', captionBody('document', document, caption) as never); },
     sendAudio(audio, caption) { return client.call('sendAudio', captionBody('audio', audio, caption) as never); },
     sendVideo(video, caption) { return client.call('sendVideo', captionBody('video', video, caption) as never); },
@@ -315,6 +410,13 @@ export function createTelegramContext(
     sendDice(emoji) {
       return client.call('sendDice', { chat_id: requireChat(), ...(emoji ? { emoji } : {}), ...sendDefaults });
     },
+    sendInvoice(invoice) {
+      return client.call('sendInvoice', buildTelegramInvoice(requireChat(), {
+        ...invoice,
+        disableNotification: invoice.disableNotification ?? options.disableNotification,
+        protectContent: invoice.protectContent ?? options.protectContent,
+      }));
+    },
     sendButtons(text, buttons) {
       if (!buttons.length) throw new Error('At least one Telegram inline button is required.');
       const inlineKeyboard = buttons.map((button, index) => {
@@ -348,6 +450,9 @@ export function createTelegramContext(
     deleteMessage(messageId) {
       return client.call('deleteMessage', { chat_id: requireChat(), message_id: currentMessageId(context, messageId) });
     },
+    deleteMessages(ids) {
+      return client.call('deleteMessages', { chat_id: requireChat(), message_ids: messageIds(ids) });
+    },
     answerCallback(text, showAlert = false) {
       if (!event.callbackQueryId) throw new Error('Answer callback can only run after a Telegram callback query.');
       if (text) telegramText(text, 'Telegram callback notification', 200);
@@ -356,6 +461,55 @@ export function createTelegramContext(
         ...(text ? { text } : {}),
         show_alert: showAlert,
       });
+    },
+    answerInlineQuery(results, queryOptions) {
+      const body = buildTelegramInlineQueryAnswer(event.inlineQueryId ?? '', results, queryOptions);
+      return answerQuery(`inline:${body.inline_query_id}`, () => client.call('answerInlineQuery', body));
+    },
+    answerShippingQuery(ok, queryOptions) {
+      const body = buildTelegramShippingQueryAnswer(event.shippingQueryId ?? '', ok, queryOptions);
+      return answerQuery(`shipping:${body.shipping_query_id}`, () => client.call('answerShippingQuery', body));
+    },
+    answerPreCheckoutQuery(ok, errorMessage) {
+      const body = buildTelegramPreCheckoutQueryAnswer(event.preCheckoutQueryId ?? '', ok, errorMessage);
+      return answerQuery(`pre-checkout:${body.pre_checkout_query_id}`, () => client.call('answerPreCheckoutQuery', body));
+    },
+    answerGuestQuery(result) {
+      const body = buildTelegramGuestQueryAnswer(event.guestQueryId ?? '', result);
+      return answerQuery(`guest:${body.guest_query_id}`, () => client.call('answerGuestQuery', body));
+    },
+    refundStarPayment(chargeId, userId) {
+      return client.call('refundStarPayment', buildTelegramStarRefund(
+        userId || event.user?.id || '',
+        chargeId || event.successfulPayment?.telegram_payment_charge_id || '',
+      ));
+    },
+    editStarSubscription(canceled, chargeId, userId) {
+      return client.call('editUserStarSubscription', buildTelegramStarSubscriptionEdit(
+        userId || event.user?.id || '',
+        chargeId || event.successfulPayment?.telegram_payment_charge_id || '',
+        canceled,
+      ));
+    },
+    createForumTopic(name, topicOptions) {
+      return client.call('createForumTopic', buildTelegramForumTopicCreate(requireChat(), name, topicOptions));
+    },
+    editForumTopic(topicOptions, messageThreadId) {
+      return client.call('editForumTopic', buildTelegramForumTopicEdit(
+        requireChat(), currentMessageThreadId(context, messageThreadId), topicOptions,
+      ));
+    },
+    closeForumTopic(messageThreadId) {
+      return client.call('closeForumTopic', buildTelegramForumTopicTarget(requireChat(), currentMessageThreadId(context, messageThreadId)));
+    },
+    reopenForumTopic(messageThreadId) {
+      return client.call('reopenForumTopic', buildTelegramForumTopicTarget(requireChat(), currentMessageThreadId(context, messageThreadId)));
+    },
+    deleteForumTopic(messageThreadId) {
+      return client.call('deleteForumTopic', buildTelegramForumTopicTarget(requireChat(), currentMessageThreadId(context, messageThreadId)));
+    },
+    unpinAllForumTopicMessages(messageThreadId) {
+      return client.call('unpinAllForumTopicMessages', buildTelegramForumTopicTarget(requireChat(), currentMessageThreadId(context, messageThreadId)));
     },
     sendChatAction(action: TelegramChatAction) {
       return client.call('sendChatAction', { chat_id: requireChat(), action });
@@ -397,6 +551,57 @@ export function createTelegramContext(
         ...(messageId || context.messageId ? { message_id: currentMessageId(context, messageId) } : {}),
       });
     },
+    stopPoll(messageId) {
+      return client.call('stopPoll', { chat_id: requireChat(), message_id: currentMessageId(context, messageId) });
+    },
+    banMember(userId, banOptions = {}) {
+      const untilDate = optionalUnixDate(banOptions.untilDate, 'Telegram ban until date');
+      return client.call('banChatMember', {
+        chat_id: requireChat(), user_id: telegramUserId(userId),
+        ...(untilDate === undefined ? {} : { until_date: untilDate }), revoke_messages: Boolean(banOptions.revokeMessages),
+      });
+    },
+    unbanMember(userId, onlyIfBanned = true) {
+      return client.call('unbanChatMember', { chat_id: requireChat(), user_id: telegramUserId(userId), only_if_banned: onlyIfBanned });
+    },
+    restrictMember(userId, permissions, untilDate) {
+      const restrictedUntil = optionalUnixDate(untilDate, 'Telegram restriction until date');
+      return client.call('restrictChatMember', {
+        chat_id: requireChat(), user_id: telegramUserId(userId), permissions: chatPermissions(permissions),
+        use_independent_chat_permissions: true,
+        ...(restrictedUntil === undefined ? {} : { until_date: restrictedUntil }),
+      });
+    },
+    promoteMember(userId, rights) {
+      return client.call('promoteChatMember', { chat_id: requireChat(), user_id: telegramUserId(userId), ...administratorRights(rights) });
+    },
+    setAdministratorTitle(userId, title) {
+      return client.call('setChatAdministratorCustomTitle', { chat_id: requireChat(), user_id: telegramUserId(userId), custom_title: memberLabel(title, 'Telegram administrator title') });
+    },
+    setMemberTag(userId, tag = '') {
+      return client.call('setChatMemberTag', { chat_id: requireChat(), user_id: telegramUserId(userId), tag: memberLabel(tag, 'Telegram member tag') });
+    },
+    setDefaultPermissions(permissions) {
+      return client.call('setChatPermissions', { chat_id: requireChat(), permissions: chatPermissions(permissions), use_independent_chat_permissions: true });
+    },
+    approveJoinRequest(userId) {
+      return client.call('approveChatJoinRequest', { chat_id: requireChat(), user_id: telegramUserId(userId) });
+    },
+    declineJoinRequest(userId) {
+      return client.call('declineChatJoinRequest', { chat_id: requireChat(), user_id: telegramUserId(userId) });
+    },
+    setChatTitle(title) {
+      return client.call('setChatTitle', { chat_id: requireChat(), title: telegramText(title.trim(), 'Telegram chat title', 128) });
+    },
+    setChatDescription(description) {
+      return client.call('setChatDescription', { chat_id: requireChat(), description: telegramText(description.trim(), 'Telegram chat description', 255, 0) });
+    },
+    unpinAllMessages() {
+      return client.call('unpinAllChatMessages', { chat_id: requireChat() });
+    },
+    leaveChat() {
+      return client.call('leaveChat', { chat_id: requireChat() });
+    },
   };
   return context;
 }
@@ -414,6 +619,9 @@ export async function dispatchTelegramUpdate(
   if (event.kind === 'command') await bot.dispatch('command', event.command, context);
   const payload = event.updateType === 'callback_query' ? event.callbackData : update[event.updateType];
   await bot.dispatch(event.updateType, payload, context);
+  if (event.kind !== 'command' && event.kind !== event.updateType) {
+    await bot.dispatch(event.kind, event.successfulPayment, context);
+  }
   return true;
 }
 

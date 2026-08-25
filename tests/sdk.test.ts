@@ -4,10 +4,14 @@ import {
   Bot,
   createTelegramContext,
   createTelegramWebhookHandler,
+  defineFlowFunction,
   parseTelegramUpdate,
   runTelegramPolling,
   TelegramClient,
   TelegramClientError,
+  TELEGRAM_ADMINISTRATOR_RIGHT_FIELDS,
+  TELEGRAM_CHAT_PERMISSION_FIELDS,
+  TELEGRAM_EVENT_TYPES,
   TELEGRAM_METHODS,
   TELEGRAM_RUNTIME_MANAGED_METHODS,
   TELEGRAM_UPDATE_TYPES,
@@ -54,6 +58,27 @@ function callbackUpdate(inline = false): TelegramUpdate {
   };
 }
 
+function successfulPaymentUpdate(updateId = 30): TelegramUpdate {
+  return {
+    update_id: updateId,
+    message: {
+      message_id: updateId * 10,
+      date: 1_700_000_000,
+      chat: { id: 7, type: 'private' },
+      from: telegramUser(),
+      successful_payment: {
+        currency: 'XTR',
+        total_amount: 100,
+        invoice_payload: 'order-7',
+        telegram_payment_charge_id: `tg-charge-${updateId}`,
+        provider_payment_charge_id: `provider-charge-${updateId}`,
+        is_recurring: true,
+        subscription_expiration_date: 1_800_000_000,
+      },
+    },
+  };
+}
+
 function json(result: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify({ ok: true, result }), {
     status: 200,
@@ -67,7 +92,11 @@ test('Telegram catalogs match Bot API 10.3 coverage without duplicates', () => {
   assert.equal(new Set(TELEGRAM_METHODS).size, 185);
   assert.equal(TELEGRAM_UPDATE_TYPES.length, 27);
   assert.equal(new Set(TELEGRAM_UPDATE_TYPES).size, 27);
+  assert.ok(TELEGRAM_EVENT_TYPES.includes('successful_payment'));
   assert.deepEqual(TELEGRAM_RUNTIME_MANAGED_METHODS, ['getUpdates', 'setWebhook', 'deleteWebhook', 'logOut', 'close']);
+  assert.ok(TELEGRAM_CHAT_PERMISSION_FIELDS.includes('can_react_to_messages'));
+  assert.ok(TELEGRAM_CHAT_PERMISSION_FIELDS.includes('can_edit_tag'));
+  assert.ok(TELEGRAM_ADMINISTRATOR_RIGHT_FIELDS.includes('can_send_welcome_messages'));
 });
 
 test('Bot registers commands, exact callbacks, catch-all callbacks, and update listeners', async () => {
@@ -111,6 +140,41 @@ test('parser normalizes commands, mentions, captions, callbacks, and chatless up
   assert.equal(pollAnswer?.updateType, 'poll_answer');
   assert.equal(pollAnswer?.user?.id, '99');
   assert.equal(pollAnswer?.chatId, undefined);
+});
+
+test('parser exposes dedicated lifecycle IDs for inline, shipping, pre-checkout, and guest queries', () => {
+  const inline = parseTelegramUpdate({ update_id: 10, inline_query: { id: 'inline-10', from: telegramUser(), query: '', offset: '' } });
+  const shipping = parseTelegramUpdate({ update_id: 11, shipping_query: { id: 'shipping-11', from: telegramUser(), invoice_payload: 'order', shipping_address: {} } });
+  const checkout = parseTelegramUpdate({ update_id: 12, pre_checkout_query: { id: 'checkout-12', from: telegramUser(), currency: 'USD', total_amount: 500, invoice_payload: 'order' } });
+  const guest = parseTelegramUpdate({
+    update_id: 13,
+    guest_message: { message_id: 13, date: 1, chat: { id: -100, type: 'supergroup' }, guest_query_id: 'guest-13', text: 'hello' },
+  });
+  assert.equal(inline?.inlineQueryId, 'inline-10');
+  assert.equal(shipping?.shippingQueryId, 'shipping-11');
+  assert.equal(checkout?.preCheckoutQueryId, 'checkout-12');
+  assert.equal(guest?.guestQueryId, 'guest-13');
+});
+
+test('parser and dispatcher expose successful payments without sending semantic events as allowed_updates', async () => {
+  const parsed = parseTelegramUpdate(successfulPaymentUpdate());
+  assert.equal(parsed?.kind, 'successful_payment');
+  assert.equal(parsed?.updateType, 'message');
+  assert.equal(parsed?.successfulPayment?.telegram_payment_charge_id, 'tg-charge-30');
+
+  const calls: string[] = [];
+  const bot = new Bot()
+    .on('message', () => { calls.push('message'); })
+    .on('successful_payment', (context) => {
+      calls.push(context.successfulPayment?.invoice_payload ?? 'missing');
+    });
+  const handler = createTelegramWebhookHandler(bot, new TelegramClient('123:test', { fetch: async () => json(true) }));
+  const response = await handler(new Request('https://example.com', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(successfulPaymentUpdate()),
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, ['message', 'order-7']);
+  assert.equal(TELEGRAM_UPDATE_TYPES.includes('successful_payment' as never), false);
 });
 
 test('parser rejects malformed, ambiguous, and unknown-only updates', () => {
@@ -237,6 +301,87 @@ test('context helpers validate and map message actions to Bot API requests', asy
   assert.throws(() => context.telegram.sendLocation(100, 0), /latitude/);
 });
 
+test('local flow functions and moderation helpers share the normalized context', async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      requests.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(true);
+    },
+  });
+  const context = createTelegramContext(messageUpdate(), client);
+  assert.ok(context);
+  const nested = defineFlowFunction('Nested', async (ctx) => { await ctx.telegram.sendSticker('sticker-id', '👋'); });
+  const moderation = defineFlowFunction('Moderation', async (ctx) => {
+    await ctx.run(nested);
+    await ctx.telegram.banMember(ctx.userId!, { revokeMessages: true });
+    await ctx.telegram.restrictMember(ctx.userId!, { can_send_messages: false });
+    await ctx.telegram.deleteMessages([ctx.messageId!, '11']);
+    await ctx.telegram.promoteMember(ctx.userId!, { can_manage_chat: true, can_delete_messages: true });
+    await ctx.telegram.setAdministratorTitle(ctx.userId!, 'Moderator');
+    await ctx.telegram.setMemberTag(ctx.userId!, 'Member');
+    await ctx.telegram.setDefaultPermissions({ can_send_messages: true });
+    await ctx.telegram.setChatTitle('Builders');
+    await ctx.telegram.unpinAllMessages();
+    await ctx.telegram.leaveChat();
+  });
+  await context.run(moderation);
+  assert.deepEqual(requests.map((request) => request.method), [
+    'sendSticker', 'banChatMember', 'restrictChatMember', 'deleteMessages', 'promoteChatMember',
+    'setChatAdministratorCustomTitle', 'setChatMemberTag', 'setChatPermissions', 'setChatTitle',
+    'unpinAllChatMessages', 'leaveChat',
+  ]);
+  assert.equal(requests[1].body.user_id, 7);
+  assert.equal(requests[1].body.revoke_messages, true);
+  assert.deepEqual(requests[2].body.permissions, { can_send_messages: false });
+  assert.deepEqual(requests[3].body.message_ids, [10, 11]);
+  assert.equal(requests[4].body.can_manage_chat, true);
+  assert.equal(requests[5].body.custom_title, 'Moderator');
+  assert.equal(requests[6].body.tag, 'Member');
+  assert.deepEqual(requests[7].body.permissions, { can_send_messages: true });
+  await assert.rejects(() => context.run({} as never), /defineFlowFunction/);
+  assert.throws(() => context.telegram.banMember('invalid'), /positive safe integer/);
+  assert.throws(() => context.telegram.restrictMember('7', {}), /at least one supported boolean field/);
+  assert.throws(() => context.telegram.deleteMessages([]), /1-100 message IDs/);
+  assert.throws(() => context.telegram.deleteMessages(['10', '10']), /must be unique/);
+  assert.throws(() => context.telegram.promoteMember('7', {}), /supported boolean field/);
+  assert.throws(() => context.telegram.setAdministratorTitle('7', 'Mod 👋'), /cannot contain emoji/);
+});
+
+test('forum-topic helpers default to the current thread and validate Telegram topic rules', async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      requests.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(true);
+    },
+  });
+  const update = messageUpdate(40, 'topic');
+  update.message!.message_thread_id = 77;
+  const context = createTelegramContext(update, client);
+  assert.ok(context);
+  assert.equal(context.messageThreadId, '77');
+  await context.telegram.createForumTopic('Support', { iconColor: 7322096 });
+  await context.telegram.editForumTopic({ name: 'Help desk', iconCustomEmojiId: null });
+  await context.telegram.closeForumTopic();
+  await context.telegram.reopenForumTopic('88');
+  await context.telegram.deleteForumTopic();
+  await context.telegram.unpinAllForumTopicMessages();
+  assert.deepEqual(requests.map((request) => request.method), [
+    'createForumTopic', 'editForumTopic', 'closeForumTopic', 'reopenForumTopic', 'deleteForumTopic',
+    'unpinAllForumTopicMessages',
+  ]);
+  assert.equal(requests[0].body.chat_id, '-100123');
+  assert.equal(requests[0].body.icon_color, 7322096);
+  assert.equal(requests[1].body.message_thread_id, 77);
+  assert.equal(requests[1].body.icon_custom_emoji_id, '');
+  assert.equal(requests[3].body.message_thread_id, 88);
+  assert.throws(() => context.telegram.createForumTopic('Bad', { iconColor: 123 as never }), /icon color is not supported/);
+  assert.throws(() => context.telegram.editForumTopic({}), /require a name or icon change/);
+  const noThread = createTelegramContext(messageUpdate(41, 'no thread'), client)!;
+  assert.throws(() => noThread.telegram.closeForumTopic(), /message thread ID/);
+});
+
 test('chatless callback context can answer and edit inline messages but cannot reply', async () => {
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
   const client = new TelegramClient('123:test', {
@@ -261,6 +406,85 @@ test('chatless callback context can answer and edit inline messages but cannot r
     body: { inline_message_id: 'inline-2', text: 'Updated' },
   });
   assert.throws(() => context.reply('No chat'), /do not provide a chat/);
+});
+
+test('query helpers build valid payloads, reject invalid combinations, and answer once per context', async () => {
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      calls.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(true);
+    },
+  });
+  const inline = createTelegramContext({ update_id: 20, inline_query: { id: 'inline-20', from: telegramUser(), query: '', offset: '' } }, client);
+  const shipping = createTelegramContext({ update_id: 21, shipping_query: { id: 'shipping-21', from: telegramUser(), invoice_payload: 'order', shipping_address: {} } }, client);
+  const checkout = createTelegramContext({ update_id: 22, pre_checkout_query: { id: 'checkout-22', from: telegramUser(), currency: 'USD', total_amount: 500, invoice_payload: 'order' } }, client);
+  const guest = createTelegramContext({
+    update_id: 23,
+    guest_message: { message_id: 23, date: 1, chat: { id: -100, type: 'supergroup' }, guest_query_id: 'guest-23', text: 'hello' },
+  }, client);
+  assert.ok(inline && shipping && checkout && guest);
+
+  await inline.telegram.answerInlineQuery([{ type: 'article', id: 'one', title: 'One' }], {
+    cacheTime: 60, isPersonal: true, nextOffset: 'next',
+  });
+  await shipping.telegram.answerShippingQuery(true, {
+    shippingOptions: [{ id: 'standard', title: 'Standard', prices: [{ label: 'Delivery', amount: 500 }] }],
+  });
+  await checkout.telegram.answerPreCheckoutQuery(false, 'Sold out');
+  await guest.telegram.answerGuestQuery({ type: 'article', id: 'guest-one', title: 'Reply' });
+
+  assert.deepEqual(calls.map((call) => call.method), [
+    'answerInlineQuery', 'answerShippingQuery', 'answerPreCheckoutQuery', 'answerGuestQuery',
+  ]);
+  assert.equal(calls[0].body.inline_query_id, 'inline-20');
+  assert.equal(calls[0].body.cache_time, 60);
+  assert.equal(calls[1].body.shipping_query_id, 'shipping-21');
+  assert.equal(calls[2].body.error_message, 'Sold out');
+  assert.equal(calls[3].body.guest_query_id, 'guest-23');
+
+  await assert.rejects(() => inline.telegram.answerInlineQuery([]), /already been answered/);
+  assert.throws(() => createTelegramContext(messageUpdate(), client)!.telegram.answerInlineQuery([]), /matching Telegram query handler/);
+  assert.throws(() => createTelegramContext({ update_id: 24, shipping_query: { id: 'shipping-24' } }, client)!.telegram.answerShippingQuery(true), /requires at least one shipping option/);
+  assert.throws(() => createTelegramContext({ update_id: 25, pre_checkout_query: { id: 'checkout-25' } }, client)!.telegram.answerPreCheckoutQuery(false), /requires an error message/);
+  assert.throws(() => createTelegramContext({ update_id: 26, guest_message: { message_id: 26, date: 1, chat: { id: 1, type: 'private' }, guest_query_id: 'guest-26' } }, client)!.telegram.answerGuestQuery({ type: '', id: 'x' }), /type is required/);
+});
+
+test('invoice, Stars refund, and subscription helpers validate and use completed-payment defaults', async () => {
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      calls.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(true);
+    },
+  });
+  const context = createTelegramContext(successfulPaymentUpdate(31), client, { protectContent: true });
+  assert.ok(context);
+  assert.equal(context.successfulPayment?.telegram_payment_charge_id, 'tg-charge-31');
+  await context.telegram.sendInvoice({
+    title: 'Premium', description: 'Premium access', payload: 'renew-7', currency: 'XTR',
+    prices: [{ label: 'Premium', amount: 100 }],
+  });
+  await context.telegram.refundStarPayment();
+  await context.telegram.editStarSubscription(true);
+
+  assert.deepEqual(calls.map((call) => call.method), ['sendInvoice', 'refundStarPayment', 'editUserStarSubscription']);
+  assert.deepEqual(calls[0].body.prices, [{ label: 'Premium', amount: 100 }]);
+  assert.equal(calls[0].body.provider_token, undefined);
+  assert.equal(calls[0].body.protect_content, true);
+  assert.equal(calls[1].body.user_id, 7);
+  assert.equal(calls[1].body.telegram_payment_charge_id, 'tg-charge-31');
+  assert.equal(calls[2].body.is_canceled, true);
+
+  assert.throws(() => context.telegram.sendInvoice({
+    title: 'Broken', description: 'Two Star components', payload: 'broken', currency: 'XTR',
+    prices: [{ label: 'One', amount: 10 }, { label: 'Two', amount: 20 }],
+  }), /exactly one labeled price/);
+  assert.throws(() => context.telegram.sendInvoice({
+    title: 'Broken', description: 'Tips for Stars', payload: 'broken', currency: 'XTR',
+    prices: [{ label: 'One', amount: 10 }], maxTipAmount: 5,
+  }), /do not support tips/);
+  assert.throws(() => createTelegramContext(messageUpdate(), client)!.telegram.refundStarPayment(), /payment charge ID/);
 });
 
 test('webhook validates method, secret, JSON, update IDs, and dispatches safely', async () => {
