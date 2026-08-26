@@ -217,6 +217,31 @@ Listen for `stopped_message_generation` to cancel your own generation task when
 the user presses Stop; `ctx.draftId` identifies the exact generation to cancel.
 Reuse the same non-zero draft ID when updating a preview.
 
+Bot API ephemeral messages have a separate edit/delete lifecycle. When an
+incoming message contains `ephemeral_message_id`, the SDK exposes it as
+`ctx.ephemeralMessageId` and automatically combines it with `ctx.userId`:
+
+```ts
+await ctx.telegram.editEphemeralMessageText('Updated');
+await ctx.telegram.editEphemeralRichMessage({ markdown: '**Ready**' });
+await ctx.telegram.editEphemeralMessageMedia({
+  type: 'photo',
+  media: 'https://example.com/result.jpg',
+  caption: 'Result',
+});
+await ctx.telegram.editEphemeralMessageCaption('Final caption');
+await ctx.telegram.editEphemeralMessageReplyMarkup(undefined, {
+  inline_keyboard: [[{ text: 'Unavailable', disabled: {} }]],
+});
+await ctx.telegram.deleteEphemeralMessage();
+```
+
+Pass `{ receiverUserId, ephemeralMessageId }` as the target when editing a
+message saved from an earlier result. The helpers validate positive IDs,
+text/caption limits, InputMedia types, entity/parse-mode conflicts, and inline
+button actions before making a request. Ephemeral keyboards reject `login_url`,
+which Telegram does not support for this message type.
+
 Telegram Business updates also expose `ctx.businessConnectionId`. The checklist
 helpers inherit that connection and the current chat/message automatically:
 
@@ -239,6 +264,34 @@ Checklist titles are limited to 1–255 characters. Each checklist contains 1–
 tasks with unique positive IDs and 1–100 characters of task text. Both helpers
 return a typed `TelegramMessage`; pass `businessConnectionId` explicitly only
 when acting outside the current Business update.
+
+Telegram gifts and Business Stars are first-class, typed helpers too. Catalog,
+balance, and owned-gift list results can be saved and reused by later code or
+Visual Flow nodes:
+
+```ts
+bot.on('business_message', async (ctx) => {
+  const catalog = await ctx.telegram.getAvailableGifts();
+  await ctx.telegram.sendGift(catalog.gifts[0].id);
+  await ctx.telegram.giftPremiumSubscription(3);
+
+  const balance = await ctx.telegram.getBusinessAccountStarBalance();
+  const owned = await ctx.telegram.getBusinessAccountGifts({ limit: 20 });
+  await ctx.telegram.upgradeGift(owned.gifts[0].owned_gift_id!, {
+    keepOriginalDetails: true,
+  });
+});
+```
+
+`sendGift()` and `giftPremiumSubscription()` inherit the current user;
+`getUserGifts()` and `getChatGifts()` inherit the current user or chat. Business
+settings, balance, transfer, list, conversion, upgrade, and ownership-transfer
+helpers inherit `ctx.businessConnectionId`. Explicit targets remain available
+for scheduled or administrative work. The SDK validates exclusive user/chat
+targets, gift text formatting, the exact 3/6/12-month Premium Stars prices,
+accepted gift categories, page limits, and Business Stars amounts before making
+a request. Conversion and ownership operations still depend on Telegram's gift
+state and the connected business account's permissions.
 
 Answerable query updates also have context-aware helpers, so query IDs never
 need to be copied out of the raw update:

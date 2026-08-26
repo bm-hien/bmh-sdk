@@ -10,6 +10,7 @@ export type ParsedTelegramUpdate = {
   text: string;
   chatId?: string;
   messageId?: string;
+  ephemeralMessageId?: string;
   messageThreadId?: string;
   draftId?: string;
   businessConnectionId?: string;
@@ -96,6 +97,7 @@ function parseCallback(callback: Record<string, unknown>): ParsedTelegramUpdate 
     text: callbackData,
     chatId: stringId(chat?.id),
     messageId: stringId(message?.message_id),
+    ephemeralMessageId: stringId(message?.ephemeral_message_id),
     messageThreadId: stringId(message?.message_thread_id),
     callbackQueryId,
     callbackData,
@@ -123,6 +125,7 @@ function parseMessage(updateType: TelegramUpdateType, message: Record<string, un
     text: text || caption,
     chatId,
     messageId: stringId(message.message_id),
+    ephemeralMessageId: stringId(message.ephemeral_message_id),
     messageThreadId: stringId(message.message_thread_id),
     businessConnectionId: stringId(message.business_connection_id),
     guestQueryId: updateType === 'guest_message' ? stringId(message.guest_query_id) : undefined,
@@ -151,6 +154,7 @@ function parseGeneric(updateType: TelegramUpdateType, payload: Record<string, un
     text,
     chatId: stringId(chat?.id),
     messageId: stringId(payload.message_id ?? nestedMessage?.message_id),
+    ephemeralMessageId: stringId(payload.ephemeral_message_id ?? nestedMessage?.ephemeral_message_id),
     messageThreadId: stringId(payload.message_thread_id ?? nestedMessage?.message_thread_id),
     draftId: updateType === 'stopped_message_generation' ? stringId(payload.draft_id) : undefined,
     businessConnectionId: stringId(payload.business_connection_id

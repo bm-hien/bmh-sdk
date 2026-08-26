@@ -49,6 +49,17 @@ export type TelegramUser = {
   username?: string;
   language_code?: string;
   is_premium?: boolean;
+  added_to_attachment_menu?: true;
+  can_join_groups?: boolean;
+  can_read_all_group_messages?: boolean;
+  supports_guest_queries?: boolean;
+  supports_inline_queries?: boolean;
+  can_connect_to_business?: boolean;
+  has_main_web_app?: boolean;
+  has_topics_enabled?: boolean;
+  allows_users_to_create_topics?: boolean;
+  can_manage_bots?: boolean;
+  supports_join_request_queries?: boolean;
 };
 
 export type TelegramChat = {
@@ -59,6 +70,124 @@ export type TelegramChat = {
   first_name?: string;
   last_name?: string;
   is_forum?: boolean;
+  is_direct_messages?: boolean;
+};
+
+export type TelegramPhotoSize = {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+};
+export type TelegramAudio = {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  performer?: string;
+  title?: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  thumbnail?: TelegramPhotoSize;
+};
+export type TelegramUserProfilePhotos = { total_count: number; photos: TelegramPhotoSize[][] };
+export type TelegramUserProfileAudios = { total_count: number; audios: TelegramAudio[] };
+export type TelegramProfileListOptions = { offset?: number; limit?: number };
+
+export type TelegramChatMemberOwner = {
+  status: 'creator'; user: TelegramUser; is_anonymous: boolean; custom_title?: string;
+};
+export type TelegramChatMemberAdministrator = {
+  status: 'administrator'; user: TelegramUser; can_be_edited: boolean; is_anonymous: boolean;
+  can_manage_chat: boolean; can_delete_messages: boolean; can_manage_video_chats: boolean;
+  can_restrict_members: boolean; can_promote_members: boolean; can_change_info: boolean;
+  can_invite_users: boolean; can_post_stories: boolean; can_edit_stories: boolean;
+  can_delete_stories: boolean; can_post_messages?: boolean; can_edit_messages?: boolean;
+  can_pin_messages?: boolean; can_manage_topics?: boolean; can_manage_direct_messages?: boolean;
+  can_manage_tags?: boolean; can_send_welcome_messages: boolean; custom_title?: string;
+};
+export type TelegramChatMemberMember = {
+  status: 'member'; user: TelegramUser; tag?: string; until_date?: number;
+};
+export type TelegramChatMemberRestricted = {
+  status: 'restricted'; user: TelegramUser; tag?: string; is_member: boolean;
+  can_send_messages: boolean; can_send_audios: boolean; can_send_documents: boolean;
+  can_send_photos: boolean; can_send_videos: boolean; can_send_video_notes: boolean;
+  can_send_voice_notes: boolean; can_send_polls: boolean; can_send_other_messages: boolean;
+  can_add_web_page_previews: boolean; can_react_to_messages: boolean; can_edit_tag: boolean;
+  can_change_info: boolean; can_invite_users: boolean; can_pin_messages: boolean;
+  can_manage_topics: boolean; until_date: number;
+};
+export type TelegramChatMemberLeft = { status: 'left'; user: TelegramUser };
+export type TelegramChatMemberBanned = { status: 'kicked'; user: TelegramUser; until_date: number };
+export type TelegramChatMember = TelegramChatMemberOwner | TelegramChatMemberAdministrator |
+  TelegramChatMemberMember | TelegramChatMemberRestricted | TelegramChatMemberLeft | TelegramChatMemberBanned;
+
+export type TelegramChatBoostSource =
+  | { source: 'premium'; user: TelegramUser }
+  | { source: 'gift_code'; user: TelegramUser }
+  | { source: 'giveaway'; giveaway_message_id: number; user?: TelegramUser; prize_star_count?: number; is_unclaimed?: true };
+export type TelegramChatBoost = {
+  boost_id: string; add_date: number; expiration_date: number; source: TelegramChatBoostSource;
+};
+export type TelegramUserChatBoosts = { boosts: TelegramChatBoost[] };
+export type TelegramBusinessBotRights = Partial<Record<
+  'can_reply' | 'can_read_messages' | 'can_delete_sent_messages' | 'can_delete_all_messages' |
+  'can_edit_name' | 'can_edit_bio' | 'can_edit_profile_photo' | 'can_edit_username' |
+  'can_change_gift_settings' | 'can_view_gifts_and_stars' | 'can_convert_gifts_to_stars' |
+  'can_transfer_and_upgrade_gifts' | 'can_transfer_stars' | 'can_manage_stories', true
+>>;
+export type TelegramBusinessConnection = {
+  id: string; user: TelegramUser; user_chat_id: number; date: number;
+  rights?: TelegramBusinessBotRights; is_enabled: boolean;
+};
+export type TelegramChatFullInfo = TelegramChat & {
+  accent_color_id: number;
+  max_reaction_count: number;
+  photo?: { small_file_id: string; small_file_unique_id: string; big_file_id: string; big_file_unique_id: string };
+  active_usernames?: string[];
+  birthdate?: { day: number; month: number; year?: number };
+  business_intro?: Record<string, unknown>;
+  business_location?: Record<string, unknown>;
+  business_opening_hours?: Record<string, unknown>;
+  personal_chat?: TelegramChat;
+  parent_chat?: TelegramChat;
+  available_reactions?: Array<Record<string, unknown>>;
+  background_custom_emoji_id?: string;
+  profile_accent_color_id?: number;
+  profile_background_custom_emoji_id?: string;
+  emoji_status_custom_emoji_id?: string;
+  emoji_status_expiration_date?: number;
+  bio?: string;
+  has_private_forwards?: true;
+  has_restricted_voice_and_video_messages?: true;
+  join_to_send_messages?: true;
+  join_by_request?: true;
+  description?: string;
+  invite_link?: string;
+  pinned_message?: TelegramMessage;
+  permissions?: TelegramChatPermissions;
+  accepted_gift_types: TelegramAcceptedGiftTypes;
+  can_send_paid_media?: true;
+  slow_mode_delay?: number;
+  unrestrict_boost_count?: number;
+  message_auto_delete_time?: number;
+  has_aggressive_anti_spam_enabled?: true;
+  has_hidden_members?: true;
+  has_protected_content?: true;
+  has_visible_history?: true;
+  sticker_set_name?: string;
+  can_set_sticker_set?: true;
+  custom_emoji_sticker_set_name?: string;
+  linked_chat_id?: number;
+  location?: Record<string, unknown>;
+  rating?: Record<string, unknown>;
+  first_profile_audio?: TelegramAudio;
+  unique_gift_colors?: TelegramUniqueGiftColors;
+  paid_message_star_count?: number;
+  guard_bot?: TelegramUser;
+  community?: Record<string, unknown>;
 };
 
 export type TelegramMessageEntity = {
@@ -73,6 +202,7 @@ export type TelegramMessageEntity = {
 
 export type TelegramMessage = {
   message_id: number;
+  ephemeral_message_id?: number;
   date: number;
   chat: TelegramChat;
   from?: TelegramUser;
@@ -155,14 +285,19 @@ export type TelegramUpdate = {
 
 export type TelegramInlineKeyboardButton = {
   text: string;
+  icon_custom_emoji_id?: string;
+  style?: 'danger' | 'success' | 'primary';
   callback_data?: string;
   url?: string;
   web_app?: { url: string };
   login_url?: Record<string, unknown>;
   switch_inline_query?: string;
   switch_inline_query_current_chat?: string;
+  switch_inline_query_chosen_chat?: Record<string, unknown>;
   copy_text?: { text: string };
+  callback_game?: Record<string, never>;
   pay?: boolean;
+  disabled?: Record<string, never>;
 };
 
 export type TelegramInlineKeyboardMarkup = { inline_keyboard: TelegramInlineKeyboardButton[][] };
@@ -193,7 +328,7 @@ export type TelegramSendOptions = {
   reply_parameters?: Record<string, unknown>;
   reply_markup?: TelegramInlineKeyboardMarkup | Record<string, unknown>;
   business_connection_id?: string;
-  ephemeral_message_parameters?: Record<string, unknown>;
+  ephemeral_message_parameters?: TelegramEphemeralMessageParameters;
 };
 
 export type TelegramSendMessageParams = TelegramSendOptions & {
@@ -386,6 +521,42 @@ export type TelegramRichMessageDraftOptions = {
   canStop?: boolean;
   keepOnStop?: boolean;
 };
+export type TelegramEphemeralMessageParameters = {
+  receiver_user_id: number;
+  callback_query_id?: string;
+  replace_callback_query_message?: boolean;
+};
+export type TelegramEphemeralMessageTarget = {
+  receiverUserId?: string | number;
+  ephemeralMessageId?: string | number;
+};
+export type TelegramInputMedia = {
+  type: 'animation' | 'audio' | 'document' | 'live_photo' | 'photo' | 'video';
+  media: string;
+  thumbnail?: string;
+  caption?: string;
+  parse_mode?: TelegramParseMode;
+  caption_entities?: TelegramMessageEntity[];
+  show_caption_above_media?: boolean;
+  has_spoiler?: boolean;
+  [key: string]: unknown;
+};
+export type TelegramEditEphemeralTextOptions = {
+  parseMode?: TelegramParseMode;
+  entities?: TelegramMessageEntity[];
+  linkPreviewOptions?: Record<string, unknown>;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+};
+export type TelegramEditEphemeralRichMessageOptions = {
+  linkPreviewOptions?: Record<string, unknown>;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+};
+export type TelegramEditEphemeralCaptionOptions = {
+  parseMode?: TelegramParseMode;
+  captionEntities?: TelegramMessageEntity[];
+  showCaptionAboveMedia?: boolean;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+};
 export type TelegramInputChecklistTask = {
   id: number;
   text: string;
@@ -407,6 +578,244 @@ export type TelegramEditChecklistOptions = {
   businessConnectionId?: string;
   messageId?: string | number;
 };
+export type TelegramGiftBackground = {
+  center_color: number;
+  edge_color: number;
+  text_color: number;
+};
+export type TelegramGift = {
+  id: string;
+  sticker: Record<string, unknown>;
+  star_count: number;
+  upgrade_star_count?: number;
+  is_premium?: true;
+  has_colors?: true;
+  total_count?: number;
+  remaining_count?: number;
+  personal_total_count?: number;
+  personal_remaining_count?: number;
+  background?: TelegramGiftBackground;
+  unique_gift_variant_count?: number;
+  publisher_chat?: TelegramChat;
+};
+export type TelegramGifts = { gifts: TelegramGift[] };
+export type TelegramUniqueGiftModel = {
+  name: string;
+  sticker: Record<string, unknown>;
+  rarity_per_mille: number;
+  rarity?: 'uncommon' | 'rare' | 'epic' | 'legendary';
+};
+export type TelegramUniqueGiftSymbol = {
+  name: string;
+  sticker: Record<string, unknown>;
+  rarity_per_mille: number;
+};
+export type TelegramUniqueGiftBackdropColors = {
+  center_color: number;
+  edge_color: number;
+  symbol_color: number;
+  text_color: number;
+};
+export type TelegramUniqueGiftBackdrop = {
+  name: string;
+  colors: TelegramUniqueGiftBackdropColors;
+  rarity_per_mille: number;
+};
+export type TelegramUniqueGiftColors = {
+  model_custom_emoji_id: string;
+  symbol_custom_emoji_id: string;
+  light_theme_main_color: number;
+  light_theme_other_colors: number[];
+  dark_theme_main_color: number;
+  dark_theme_other_colors: number[];
+};
+export type TelegramUniqueGift = {
+  gift_id: string;
+  base_name: string;
+  name: string;
+  number: number;
+  model: TelegramUniqueGiftModel;
+  symbol: TelegramUniqueGiftSymbol;
+  backdrop: TelegramUniqueGiftBackdrop;
+  is_premium?: true;
+  is_burned?: true;
+  is_from_blockchain?: true;
+  colors?: TelegramUniqueGiftColors;
+  publisher_chat?: TelegramChat;
+};
+export type TelegramOwnedGiftRegular = {
+  type: 'regular';
+  gift: TelegramGift;
+  owned_gift_id?: string;
+  sender_user?: TelegramUser;
+  send_date: number;
+  text?: string;
+  entities?: TelegramMessageEntity[];
+  is_private?: true;
+  is_saved?: true;
+  can_be_upgraded?: true;
+  was_refunded?: true;
+  convert_star_count?: number;
+  prepaid_upgrade_star_count?: number;
+  is_upgrade_separate?: true;
+  unique_gift_number?: number;
+};
+export type TelegramOwnedGiftUnique = {
+  type: 'unique';
+  gift: TelegramUniqueGift;
+  owned_gift_id?: string;
+  sender_user?: TelegramUser;
+  send_date: number;
+  is_saved?: true;
+  can_be_transferred?: true;
+  transfer_star_count?: number;
+  next_transfer_date?: number;
+};
+export type TelegramOwnedGift = TelegramOwnedGiftRegular | TelegramOwnedGiftUnique;
+export type TelegramOwnedGifts = {
+  total_count: number;
+  gifts: TelegramOwnedGift[];
+  next_offset?: string;
+};
+export type TelegramAcceptedGiftTypes = {
+  unlimited_gifts: boolean;
+  limited_gifts: boolean;
+  unique_gifts: boolean;
+  premium_subscription: boolean;
+  gifts_from_channels: boolean;
+};
+export type TelegramStarAmount = {
+  amount: number;
+  nanostar_amount?: number;
+};
+export type TelegramGiftTextOptions = {
+  text?: string;
+  parseMode?: TelegramParseMode;
+  textEntities?: TelegramMessageEntity[];
+};
+export type TelegramSendGiftOptions = TelegramGiftTextOptions & {
+  userId?: string | number;
+  chatId?: TelegramChatId;
+  payForUpgrade?: boolean;
+};
+export type TelegramPremiumGiftOptions = TelegramGiftTextOptions & {
+  userId?: string | number;
+};
+export type TelegramOwnedGiftListOptions = {
+  excludeUnsaved?: boolean;
+  excludeSaved?: boolean;
+  excludeUnlimited?: boolean;
+  excludeLimitedUpgradable?: boolean;
+  excludeLimitedNonUpgradable?: boolean;
+  excludeUnique?: boolean;
+  excludeFromBlockchain?: boolean;
+  sortByPrice?: boolean;
+  offset?: string;
+  limit?: number;
+};
+export type TelegramUpgradeGiftOptions = {
+  keepOriginalDetails?: boolean;
+  starCount?: number;
+};
+
+function telegramLookupChatId(value: unknown, label = 'Telegram lookup chat ID'): TelegramChatId {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value === 0) throw new Error(`${label} must be a non-zero safe integer or username.`);
+    return value;
+  }
+  const id = String(value ?? '').trim();
+  if (!id) throw new Error(`${label} is required.`);
+  return id;
+}
+
+function telegramLookupBusinessConnectionId(value: unknown) {
+  const id = String(value ?? '').trim();
+  if (!id) throw new Error('Telegram business connection lookup requires a business connection ID.');
+  return id;
+}
+
+function telegramProfileListOptions(value: TelegramProfileListOptions, label: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} options must be an object.`);
+  const unknown = Object.keys(value).find((key) => !['offset', 'limit'].includes(key));
+  if (unknown) throw new Error(`Unsupported ${label} option: ${unknown}.`);
+  const offset = value.offset;
+  const limit = value.limit;
+  if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) {
+    throw new Error(`${label} offset must be a non-negative safe integer.`);
+  }
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)) {
+    throw new Error(`${label} limit must be an integer from 1 to 100.`);
+  }
+  return { ...(offset === undefined ? {} : { offset }), ...(limit === undefined ? {} : { limit }) };
+}
+
+export function buildTelegramBotProfileQuery(): TelegramMethodParams['getMe'] {
+  return {};
+}
+
+export function buildTelegramChatLookup(chatId: TelegramChatId): TelegramMethodParams['getChat'] {
+  return { chat_id: telegramLookupChatId(chatId) };
+}
+
+export function buildTelegramChatAdministratorsLookup(
+  chatId: TelegramChatId,
+  returnBots?: boolean,
+): TelegramMethodParams['getChatAdministrators'] {
+  if (returnBots !== undefined && typeof returnBots !== 'boolean') {
+    throw new Error('Telegram administrator lookup returnBots must be boolean.');
+  }
+  return { chat_id: telegramLookupChatId(chatId), ...(returnBots === undefined ? {} : { return_bots: returnBots }) };
+}
+
+export function buildTelegramChatMemberCountLookup(chatId: TelegramChatId): TelegramMethodParams['getChatMemberCount'] {
+  return { chat_id: telegramLookupChatId(chatId) };
+}
+
+export function buildTelegramChatMemberLookup(
+  chatId: TelegramChatId,
+  userId: string | number,
+): TelegramMethodParams['getChatMember'] {
+  return {
+    chat_id: telegramLookupChatId(chatId),
+    user_id: telegramPositiveInteger(userId, 'Telegram member lookup user ID'),
+  };
+}
+
+export function buildTelegramUserProfilePhotosQuery(
+  userId: string | number,
+  options: TelegramProfileListOptions = {},
+): TelegramMethodParams['getUserProfilePhotos'] {
+  return {
+    user_id: telegramPositiveInteger(userId, 'Telegram profile photo user ID'),
+    ...telegramProfileListOptions(options, 'Telegram profile photo query'),
+  };
+}
+
+export function buildTelegramUserProfileAudiosQuery(
+  userId: string | number,
+  options: TelegramProfileListOptions = {},
+): TelegramMethodParams['getUserProfileAudios'] {
+  return {
+    user_id: telegramPositiveInteger(userId, 'Telegram profile audio user ID'),
+    ...telegramProfileListOptions(options, 'Telegram profile audio query'),
+  };
+}
+
+export function buildTelegramUserChatBoostsLookup(
+  chatId: TelegramChatId,
+  userId: string | number,
+): TelegramMethodParams['getUserChatBoosts'] {
+  return {
+    chat_id: telegramLookupChatId(chatId, 'Telegram boost lookup chat ID'),
+    user_id: telegramPositiveInteger(userId, 'Telegram boost lookup user ID'),
+  };
+}
+
+export function buildTelegramBusinessConnectionLookup(
+  businessConnectionId: string,
+): TelegramMethodParams['getBusinessConnection'] {
+  return { business_connection_id: telegramLookupBusinessConnectionId(businessConnectionId) };
+}
 
 function telegramQueryId(value: string, label: string) {
   const id = String(value ?? '').trim();
@@ -456,8 +865,10 @@ function telegramInvoiceText(value: unknown, label: string, minimum: number, max
 }
 
 function telegramPositiveInteger(value: unknown, label: string) {
-  if (!Number.isSafeInteger(value) || Number(value) <= 0) throw new Error(`${label} must be a positive integer.`);
-  return Number(value);
+  const numeric = typeof value === 'number' ? value
+    : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : Number.NaN;
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) throw new Error(`${label} must be a positive integer.`);
+  return numeric;
 }
 
 function telegramInvoicePrices(values: TelegramLabeledPrice[], currency: string) {
@@ -948,7 +1359,7 @@ export function buildTelegramRichMessageSend(
   const directMessagesTopicId = positive(options.directMessagesTopicId, 'Telegram rich direct messages topic ID');
   const businessConnectionId = options.businessConnectionId === undefined ? undefined : String(options.businessConnectionId).trim();
   if (options.businessConnectionId !== undefined && !businessConnectionId) throw new Error('Telegram rich message business connection ID cannot be empty.');
-  let ephemeral: Record<string, unknown> | undefined;
+  let ephemeral: TelegramEphemeralMessageParameters | undefined;
   if (options.ephemeralMessageParameters !== undefined) {
     const value = telegramRichRecord(options.ephemeralMessageParameters, 'Telegram ephemeral message parameters');
     const unknownEphemeral = Object.keys(value).find((key) => !['receiver_user_id', 'callback_query_id', 'replace_callback_query_message'].includes(key));
@@ -1022,6 +1433,201 @@ export function buildTelegramRichMessageEdit(
     chat_id: telegramRichChatId(chatId), message_id,
     rich_message: buildTelegramRichMessage(richMessage, 'edit'),
   };
+}
+
+function telegramEphemeralTarget(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+) {
+  return {
+    chat_id: telegramRichChatId(chatId),
+    receiver_user_id: telegramPositiveInteger(receiverUserId, 'Telegram ephemeral receiver user ID'),
+    ephemeral_message_id: telegramPositiveInteger(ephemeralMessageId, 'Telegram ephemeral message ID'),
+  };
+}
+
+function telegramEphemeralParseMode(value: unknown, label: string): TelegramParseMode | undefined {
+  if (value === undefined) return undefined;
+  if (value !== 'HTML' && value !== 'MarkdownV2') throw new Error(`${label} must be HTML or MarkdownV2.`);
+  return value;
+}
+
+function telegramEphemeralEntities(value: unknown, label: string) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array.`);
+  return value.map((entity, index) => {
+    const record = telegramRichRecord(entity, `${label} item ${index + 1}`);
+    if (typeof record.type !== 'string' || !record.type.trim()) throw new Error(`${label} item ${index + 1} requires a type.`);
+    if (!Number.isSafeInteger(record.offset) || Number(record.offset) < 0
+      || !Number.isSafeInteger(record.length) || Number(record.length) <= 0) {
+      throw new Error(`${label} item ${index + 1} requires a non-negative offset and positive length.`);
+    }
+    return record as TelegramMessageEntity;
+  });
+}
+
+function telegramEphemeralReplyMarkup(value: unknown, label: string) {
+  if (value === undefined) return undefined;
+  const markup = telegramRichRecord(value, label);
+  const unknown = Object.keys(markup).find((key) => key !== 'inline_keyboard');
+  if (unknown) throw new Error(`Unsupported ${label} field: ${unknown}.`);
+  if (!Array.isArray(markup.inline_keyboard)) throw new Error(`${label} requires inline_keyboard rows.`);
+  const actionFields = [
+    'url', 'callback_data', 'web_app', 'login_url', 'switch_inline_query', 'switch_inline_query_current_chat',
+    'switch_inline_query_chosen_chat', 'copy_text', 'callback_game', 'pay', 'disabled',
+  ];
+  const inline_keyboard = markup.inline_keyboard.map((row, rowIndex) => {
+    if (!Array.isArray(row) || !row.length) throw new Error(`${label} row ${rowIndex + 1} cannot be empty.`);
+    return row.map((button, columnIndex) => {
+      const itemLabel = `${label} button ${rowIndex + 1}:${columnIndex + 1}`;
+      const record = telegramRichRecord(button, itemLabel);
+      if (typeof record.text !== 'string' || !record.text.trim()) throw new Error(`${itemLabel} requires text.`);
+      const unknownButton = Object.keys(record).find((key) => ![
+        'text', 'icon_custom_emoji_id', 'style', ...actionFields,
+      ].includes(key));
+      if (unknownButton) throw new Error(`Unsupported ${itemLabel} field: ${unknownButton}.`);
+      const actions = actionFields.filter((key) => record[key] !== undefined);
+      if (actions.length !== 1) throw new Error(`${itemLabel} must define exactly one action.`);
+      if (record.login_url !== undefined) throw new Error(`${itemLabel} cannot use login_url in an ephemeral message.`);
+      if (record.callback_data !== undefined) {
+        const bytes = new TextEncoder().encode(String(record.callback_data)).byteLength;
+        if (bytes < 1 || bytes > 64) throw new Error(`${itemLabel} callback_data must be 1-64 bytes.`);
+      }
+      if (record.style !== undefined && !['danger', 'success', 'primary'].includes(String(record.style))) {
+        throw new Error(`${itemLabel} style must be danger, success, or primary.`);
+      }
+      return record as TelegramInlineKeyboardButton;
+    });
+  });
+  return { inline_keyboard };
+}
+
+function telegramEphemeralEditOptions(
+  options: TelegramEditEphemeralTextOptions | TelegramEditEphemeralRichMessageOptions,
+  allowTextFormatting: boolean,
+) {
+  const record = telegramRichRecord(options, 'Telegram ephemeral message edit options');
+  const allowed = allowTextFormatting
+    ? ['parseMode', 'entities', 'linkPreviewOptions', 'replyMarkup']
+    : ['linkPreviewOptions', 'replyMarkup'];
+  const unknown = Object.keys(record).find((key) => !allowed.includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram ephemeral message edit option: ${unknown}.`);
+  const parseMode = allowTextFormatting ? telegramEphemeralParseMode(record.parseMode, 'Telegram ephemeral parse mode') : undefined;
+  const entities = allowTextFormatting ? telegramEphemeralEntities(record.entities, 'Telegram ephemeral message entities') : undefined;
+  if (parseMode !== undefined && entities !== undefined) throw new Error('Telegram ephemeral edits cannot use parseMode and entities together.');
+  const linkPreviewOptions = record.linkPreviewOptions === undefined ? undefined
+    : telegramRichRecord(record.linkPreviewOptions, 'Telegram ephemeral link preview options');
+  const replyMarkup = telegramEphemeralReplyMarkup(record.replyMarkup, 'Telegram ephemeral reply markup');
+  return { parseMode, entities, linkPreviewOptions, replyMarkup };
+}
+
+export function buildTelegramEphemeralTextEdit(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+  text: string,
+  options: TelegramEditEphemeralTextOptions = {},
+): TelegramMethodParams['editEphemeralMessageText'] {
+  const value = telegramInvoiceText(text, 'Telegram ephemeral message text', 1, 4096);
+  const validated = telegramEphemeralEditOptions(options, true);
+  return {
+    ...telegramEphemeralTarget(chatId, receiverUserId, ephemeralMessageId), text: value,
+    ...(validated.parseMode === undefined ? {} : { parse_mode: validated.parseMode }),
+    ...(validated.entities === undefined ? {} : { entities: validated.entities }),
+    ...(validated.linkPreviewOptions === undefined ? {} : { link_preview_options: validated.linkPreviewOptions }),
+    ...(validated.replyMarkup === undefined ? {} : { reply_markup: validated.replyMarkup }),
+  };
+}
+
+export function buildTelegramEphemeralRichMessageEdit(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+  richMessage: TelegramInputRichMessage,
+  options: TelegramEditEphemeralRichMessageOptions = {},
+): TelegramMethodParams['editEphemeralMessageText'] {
+  const validated = telegramEphemeralEditOptions(options, false);
+  return {
+    ...telegramEphemeralTarget(chatId, receiverUserId, ephemeralMessageId),
+    rich_message: buildTelegramRichMessage(richMessage, 'edit'),
+    ...(validated.linkPreviewOptions === undefined ? {} : { link_preview_options: validated.linkPreviewOptions }),
+    ...(validated.replyMarkup === undefined ? {} : { reply_markup: validated.replyMarkup }),
+  };
+}
+
+export function buildTelegramEphemeralMediaEdit(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+  media: TelegramInputMedia,
+  replyMarkup?: TelegramInlineKeyboardMarkup,
+): TelegramMethodParams['editEphemeralMessageMedia'] {
+  const record = telegramRichRecord(media, 'Telegram ephemeral media');
+  if (!['animation', 'audio', 'document', 'live_photo', 'photo', 'video'].includes(String(record.type))) {
+    throw new Error('Telegram ephemeral media type must be animation, audio, document, live_photo, photo, or video.');
+  }
+  if (typeof record.media !== 'string' || !record.media.trim()) throw new Error('Telegram ephemeral media requires a file ID, URL, or attachment reference.');
+  telegramEphemeralParseMode(record.parse_mode, 'Telegram ephemeral media parse mode');
+  const captionEntities = telegramEphemeralEntities(record.caption_entities, 'Telegram ephemeral media caption entities');
+  if (record.parse_mode !== undefined && captionEntities !== undefined) throw new Error('Telegram ephemeral media cannot use parse_mode and caption_entities together.');
+  if (record.caption !== undefined) telegramInvoiceText(String(record.caption), 'Telegram ephemeral media caption', 0, 1024);
+  for (const key of ['show_caption_above_media', 'has_spoiler'] as const) {
+    if (record[key] !== undefined && typeof record[key] !== 'boolean') throw new Error(`Telegram ephemeral media ${key} must be boolean.`);
+  }
+  const markup = telegramEphemeralReplyMarkup(replyMarkup, 'Telegram ephemeral reply markup');
+  return {
+    ...telegramEphemeralTarget(chatId, receiverUserId, ephemeralMessageId), media: record as TelegramInputMedia,
+    ...(markup === undefined ? {} : { reply_markup: markup }),
+  };
+}
+
+export function buildTelegramEphemeralCaptionEdit(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+  caption = '',
+  options: TelegramEditEphemeralCaptionOptions = {},
+): TelegramMethodParams['editEphemeralMessageCaption'] {
+  const record = telegramRichRecord(options, 'Telegram ephemeral caption edit options');
+  const unknown = Object.keys(record).find((key) => !['parseMode', 'captionEntities', 'showCaptionAboveMedia', 'replyMarkup'].includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram ephemeral caption edit option: ${unknown}.`);
+  const parseMode = telegramEphemeralParseMode(record.parseMode, 'Telegram ephemeral caption parse mode');
+  const captionEntities = telegramEphemeralEntities(record.captionEntities, 'Telegram ephemeral caption entities');
+  if (parseMode !== undefined && captionEntities !== undefined) throw new Error('Telegram ephemeral captions cannot use parseMode and captionEntities together.');
+  if (record.showCaptionAboveMedia !== undefined && typeof record.showCaptionAboveMedia !== 'boolean') {
+    throw new Error('Telegram ephemeral showCaptionAboveMedia must be boolean.');
+  }
+  const markup = telegramEphemeralReplyMarkup(record.replyMarkup, 'Telegram ephemeral reply markup');
+  return {
+    ...telegramEphemeralTarget(chatId, receiverUserId, ephemeralMessageId),
+    caption: telegramInvoiceText(caption, 'Telegram ephemeral caption', 0, 1024),
+    ...(parseMode === undefined ? {} : { parse_mode: parseMode }),
+    ...(captionEntities === undefined ? {} : { caption_entities: captionEntities }),
+    ...(record.showCaptionAboveMedia === undefined ? {} : { show_caption_above_media: record.showCaptionAboveMedia as boolean }),
+    ...(markup === undefined ? {} : { reply_markup: markup }),
+  };
+}
+
+export function buildTelegramEphemeralReplyMarkupEdit(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+  replyMarkup?: TelegramInlineKeyboardMarkup,
+): TelegramMethodParams['editEphemeralMessageReplyMarkup'] {
+  const markup = telegramEphemeralReplyMarkup(replyMarkup, 'Telegram ephemeral reply markup');
+  return {
+    ...telegramEphemeralTarget(chatId, receiverUserId, ephemeralMessageId),
+    ...(markup === undefined ? {} : { reply_markup: markup }),
+  };
+}
+
+export function buildTelegramEphemeralDelete(
+  chatId: TelegramChatId,
+  receiverUserId: string | number,
+  ephemeralMessageId: string | number,
+): TelegramMethodParams['deleteEphemeralMessage'] {
+  return telegramEphemeralTarget(chatId, receiverUserId, ephemeralMessageId);
 }
 
 function telegramChecklistParseMode(value: unknown, label: string) {
@@ -1123,6 +1729,261 @@ export function buildTelegramChecklistEdit(
     business_connection_id: telegramChecklistConnectionId(businessConnectionId),
     chat_id: telegramChecklistChatId(chatId), message_id,
     checklist: buildTelegramChecklist(checklist),
+  };
+}
+
+const TELEGRAM_ACCEPTED_GIFT_TYPE_FIELDS = [
+  'unlimited_gifts', 'limited_gifts', 'unique_gifts', 'premium_subscription', 'gifts_from_channels',
+] as const;
+const telegramGiftEntityTypes = new Set([
+  'bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'custom_emoji', 'date_time',
+]);
+
+function telegramGiftId(value: unknown, label = 'Telegram gift ID') {
+  const id = String(value ?? '').trim();
+  if (!id) throw new Error(`${label} is required.`);
+  return id;
+}
+
+function telegramGiftBusinessConnectionId(value: unknown) {
+  const id = String(value ?? '').trim();
+  if (!id) throw new Error('Telegram Business gift actions require a business connection ID.');
+  return id;
+}
+
+function telegramGiftChatId(value: unknown, label: string): TelegramChatId {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value === 0) throw new Error(`${label} must be a non-zero safe integer or username.`);
+    return value;
+  }
+  const chatId = String(value ?? '').trim();
+  if (!chatId) throw new Error(`${label} is required.`);
+  return chatId;
+}
+
+function telegramGiftTextOptions(value: TelegramGiftTextOptions, label: string) {
+  const record = telegramRichRecord(value, `${label} options`);
+  const unknown = Object.keys(record).find((key) => !['text', 'parseMode', 'textEntities'].includes(key));
+  if (unknown) throw new Error(`Unsupported ${label} option: ${unknown}.`);
+  const text = value.text === undefined ? undefined : String(value.text);
+  if (text !== undefined && Array.from(text).length > 128) throw new Error(`${label} text must be 0-128 characters.`);
+  const parseMode = telegramEphemeralParseMode(value.parseMode, `${label} parse mode`);
+  const textEntities = telegramEphemeralEntities(value.textEntities, `${label} text entities`);
+  if (parseMode !== undefined && textEntities !== undefined) {
+    throw new Error(`${label} parseMode and textEntities are mutually exclusive.`);
+  }
+  if ((parseMode !== undefined || textEntities !== undefined) && text === undefined) {
+    throw new Error(`${label} formatting requires text.`);
+  }
+  const unsupportedEntity = textEntities?.find((entity) => !telegramGiftEntityTypes.has(entity.type));
+  if (unsupportedEntity) throw new Error(`${label} does not support the ${unsupportedEntity.type} entity type.`);
+  return {
+    ...(text === undefined ? {} : { text }),
+    ...(parseMode === undefined ? {} : { text_parse_mode: parseMode }),
+    ...(textEntities === undefined ? {} : { text_entities: textEntities }),
+  };
+}
+
+export function buildTelegramGiftSend(
+  giftId: string,
+  options: TelegramSendGiftOptions,
+): TelegramMethodParams['sendGift'] {
+  const record = telegramRichRecord(options, 'Telegram send gift options');
+  const unknown = Object.keys(record).find((key) => ![
+    'userId', 'chatId', 'payForUpgrade', 'text', 'parseMode', 'textEntities',
+  ].includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram send gift option: ${unknown}.`);
+  const hasUser = options.userId !== undefined;
+  const hasChat = options.chatId !== undefined;
+  if (Number(hasUser) + Number(hasChat) !== 1) {
+    throw new Error('Telegram sendGift requires exactly one of userId or chatId.');
+  }
+  if (options.payForUpgrade !== undefined && typeof options.payForUpgrade !== 'boolean') {
+    throw new Error('Telegram send gift payForUpgrade must be boolean.');
+  }
+  const recipient = hasUser
+    ? { user_id: telegramPositiveInteger(options.userId, 'Telegram gift receiver user ID') }
+    : { chat_id: telegramGiftChatId(options.chatId, 'Telegram gift receiver chat ID') };
+  return {
+    ...recipient,
+    gift_id: telegramGiftId(giftId),
+    ...(options.payForUpgrade === undefined ? {} : { pay_for_upgrade: options.payForUpgrade }),
+    ...telegramGiftTextOptions({ text: options.text, parseMode: options.parseMode, textEntities: options.textEntities }, 'Telegram gift'),
+  };
+}
+
+export function buildTelegramPremiumSubscriptionGift(
+  userId: string | number,
+  monthCount: 3 | 6 | 12,
+  options: TelegramGiftTextOptions = {},
+): TelegramMethodParams['giftPremiumSubscription'] {
+  if (![3, 6, 12].includes(monthCount)) throw new Error('Telegram Premium gifts support exactly 3, 6, or 12 months.');
+  const starCounts = { 3: 1000, 6: 1500, 12: 2500 } as const;
+  return {
+    user_id: telegramPositiveInteger(userId, 'Telegram Premium gift receiver user ID'),
+    month_count: monthCount,
+    star_count: starCounts[monthCount],
+    ...telegramGiftTextOptions(options, 'Telegram Premium gift'),
+  };
+}
+
+function telegramAcceptedGiftTypes(value: TelegramAcceptedGiftTypes) {
+  const record = telegramRichRecord(value, 'Telegram accepted gift types');
+  const unknown = Object.keys(record).find((key) => !(TELEGRAM_ACCEPTED_GIFT_TYPE_FIELDS as readonly string[]).includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram accepted gift type: ${unknown}.`);
+  for (const key of TELEGRAM_ACCEPTED_GIFT_TYPE_FIELDS) {
+    if (typeof record[key] !== 'boolean') throw new Error(`Telegram accepted gift type ${key} must be boolean.`);
+  }
+  return Object.fromEntries(TELEGRAM_ACCEPTED_GIFT_TYPE_FIELDS.map((key) => [key, record[key]])) as TelegramAcceptedGiftTypes;
+}
+
+export function buildTelegramBusinessGiftSettings(
+  businessConnectionId: string,
+  showGiftButton: boolean,
+  acceptedGiftTypes: TelegramAcceptedGiftTypes,
+): TelegramMethodParams['setBusinessAccountGiftSettings'] {
+  if (typeof showGiftButton !== 'boolean') throw new Error('Telegram Business showGiftButton must be boolean.');
+  return {
+    business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId),
+    show_gift_button: showGiftButton,
+    accepted_gift_types: telegramAcceptedGiftTypes(acceptedGiftTypes),
+  };
+}
+
+export function buildTelegramBusinessStarBalance(
+  businessConnectionId: string,
+): TelegramMethodParams['getBusinessAccountStarBalance'] {
+  return { business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId) };
+}
+
+export function buildTelegramBusinessStarsTransfer(
+  businessConnectionId: string,
+  starCount: number,
+): TelegramMethodParams['transferBusinessAccountStars'] {
+  if (!Number.isSafeInteger(starCount) || starCount < 1 || starCount > 10_000) {
+    throw new Error('Telegram Business Stars transfer must be an integer from 1 to 10000.');
+  }
+  return { business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId), star_count: starCount };
+}
+
+function telegramOwnedGiftListOptions(value: TelegramOwnedGiftListOptions, allowSavedFilters: boolean) {
+  const record = telegramRichRecord(value, 'Telegram owned gift list options');
+  const booleanFields = [
+    ...(allowSavedFilters ? ['excludeUnsaved', 'excludeSaved'] : []),
+    'excludeUnlimited', 'excludeLimitedUpgradable', 'excludeLimitedNonUpgradable', 'excludeUnique',
+    'excludeFromBlockchain', 'sortByPrice',
+  ];
+  const allowed = new Set([...booleanFields, 'offset', 'limit']);
+  const unknown = Object.keys(record).find((key) => !allowed.has(key));
+  if (unknown) throw new Error(`Unsupported Telegram owned gift list option: ${unknown}.`);
+  for (const key of booleanFields) {
+    if (record[key] !== undefined && typeof record[key] !== 'boolean') {
+      throw new Error(`Telegram owned gift list ${key} must be boolean.`);
+    }
+  }
+  if (record.excludeUnsaved === true && record.excludeSaved === true) {
+    throw new Error('Telegram owned gift list cannot exclude both saved and unsaved gifts.');
+  }
+  if (record.excludeUnlimited === true && record.excludeLimitedUpgradable === true
+    && record.excludeLimitedNonUpgradable === true && record.excludeUnique === true) {
+    throw new Error('Telegram owned gift list cannot exclude every gift category.');
+  }
+  if (value.limit !== undefined && (!Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 100)) {
+    throw new Error('Telegram owned gift list limit must be an integer from 1 to 100.');
+  }
+  const offset = value.offset === undefined ? undefined : String(value.offset);
+  return {
+    ...(record.excludeUnsaved === undefined ? {} : { exclude_unsaved: record.excludeUnsaved as boolean }),
+    ...(record.excludeSaved === undefined ? {} : { exclude_saved: record.excludeSaved as boolean }),
+    ...(record.excludeUnlimited === undefined ? {} : { exclude_unlimited: record.excludeUnlimited as boolean }),
+    ...(record.excludeLimitedUpgradable === undefined ? {} : { exclude_limited_upgradable: record.excludeLimitedUpgradable as boolean }),
+    ...(record.excludeLimitedNonUpgradable === undefined ? {} : { exclude_limited_non_upgradable: record.excludeLimitedNonUpgradable as boolean }),
+    ...(record.excludeUnique === undefined ? {} : { exclude_unique: record.excludeUnique as boolean }),
+    ...(record.excludeFromBlockchain === undefined ? {} : { exclude_from_blockchain: record.excludeFromBlockchain as boolean }),
+    ...(record.sortByPrice === undefined ? {} : { sort_by_price: record.sortByPrice as boolean }),
+    ...(offset === undefined ? {} : { offset }),
+    ...(value.limit === undefined ? {} : { limit: value.limit }),
+  };
+}
+
+export function buildTelegramBusinessGiftsQuery(
+  businessConnectionId: string,
+  options: TelegramOwnedGiftListOptions = {},
+): TelegramMethodParams['getBusinessAccountGifts'] {
+  return {
+    business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId),
+    ...telegramOwnedGiftListOptions(options, true),
+  };
+}
+
+export function buildTelegramUserGiftsQuery(
+  userId: string | number,
+  options: TelegramOwnedGiftListOptions = {},
+): TelegramMethodParams['getUserGifts'] {
+  return {
+    user_id: telegramPositiveInteger(userId, 'Telegram owned gifts user ID'),
+    ...telegramOwnedGiftListOptions(options, false),
+  };
+}
+
+export function buildTelegramChatGiftsQuery(
+  chatId: TelegramChatId,
+  options: TelegramOwnedGiftListOptions = {},
+): TelegramMethodParams['getChatGifts'] {
+  return {
+    chat_id: telegramGiftChatId(chatId, 'Telegram owned gifts chat ID'),
+    ...telegramOwnedGiftListOptions(options, true),
+  };
+}
+
+export function buildTelegramGiftConversion(
+  businessConnectionId: string,
+  ownedGiftId: string,
+): TelegramMethodParams['convertGiftToStars'] {
+  return {
+    business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId),
+    owned_gift_id: telegramGiftId(ownedGiftId, 'Telegram owned gift ID'),
+  };
+}
+
+function telegramOptionalStarCount(value: unknown, label: string) {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error(`${label} must be a non-negative safe integer.`);
+  return Number(value);
+}
+
+export function buildTelegramGiftUpgrade(
+  businessConnectionId: string,
+  ownedGiftId: string,
+  options: TelegramUpgradeGiftOptions = {},
+): TelegramMethodParams['upgradeGift'] {
+  const record = telegramRichRecord(options, 'Telegram gift upgrade options');
+  const unknown = Object.keys(record).find((key) => !['keepOriginalDetails', 'starCount'].includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram gift upgrade option: ${unknown}.`);
+  if (options.keepOriginalDetails !== undefined && typeof options.keepOriginalDetails !== 'boolean') {
+    throw new Error('Telegram gift upgrade keepOriginalDetails must be boolean.');
+  }
+  const starCount = telegramOptionalStarCount(options.starCount, 'Telegram gift upgrade starCount');
+  return {
+    business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId),
+    owned_gift_id: telegramGiftId(ownedGiftId, 'Telegram owned gift ID'),
+    ...(options.keepOriginalDetails === undefined ? {} : { keep_original_details: options.keepOriginalDetails }),
+    ...(starCount === undefined ? {} : { star_count: starCount }),
+  };
+}
+
+export function buildTelegramGiftTransfer(
+  businessConnectionId: string,
+  ownedGiftId: string,
+  newOwnerChatId: string | number,
+  starCount?: number,
+): TelegramMethodParams['transferGift'] {
+  const transferStars = telegramOptionalStarCount(starCount, 'Telegram gift transfer starCount');
+  return {
+    business_connection_id: telegramGiftBusinessConnectionId(businessConnectionId),
+    owned_gift_id: telegramGiftId(ownedGiftId, 'Telegram owned gift ID'),
+    new_owner_chat_id: telegramPositiveInteger(newOwnerChatId, 'Telegram gift new owner chat ID'),
+    ...(transferStars === undefined ? {} : { star_count: transferStars }),
   };
 }
 
@@ -1274,7 +2135,7 @@ export type TelegramMethodParams = {
   sendRichMessage: {
     chat_id: TelegramChatId; rich_message: ReturnType<typeof buildTelegramRichMessage>;
     business_connection_id?: string; message_thread_id?: number; direct_messages_topic_id?: number;
-    ephemeral_message_parameters?: Record<string, unknown>; disable_notification?: boolean; protect_content?: boolean;
+    ephemeral_message_parameters?: TelegramEphemeralMessageParameters; disable_notification?: boolean; protect_content?: boolean;
     allow_paid_broadcast?: boolean; message_effect_id?: string; suggested_post_parameters?: Record<string, unknown>;
     reply_parameters?: Record<string, unknown>; reply_markup?: Record<string, unknown>;
   };
@@ -1289,11 +2150,67 @@ export type TelegramMethodParams = {
     is_flexible?: boolean; allow_paid_broadcast?: boolean; message_effect_id?: string;
     suggested_post_parameters?: Record<string, unknown>;
   };
+  getAvailableGifts: Record<string, never>;
+  sendGift: ({ user_id: number; chat_id?: never } | { chat_id: TelegramChatId; user_id?: never }) & {
+    gift_id: string; pay_for_upgrade?: boolean; text?: string; text_parse_mode?: TelegramParseMode;
+    text_entities?: TelegramMessageEntity[];
+  };
+  giftPremiumSubscription: {
+    user_id: number; month_count: 3 | 6 | 12; star_count: 1000 | 1500 | 2500;
+    text?: string; text_parse_mode?: TelegramParseMode; text_entities?: TelegramMessageEntity[];
+  };
+  setBusinessAccountGiftSettings: {
+    business_connection_id: string; show_gift_button: boolean; accepted_gift_types: TelegramAcceptedGiftTypes;
+  };
+  getBusinessAccountStarBalance: { business_connection_id: string };
+  transferBusinessAccountStars: { business_connection_id: string; star_count: number };
+  getBusinessAccountGifts: {
+    business_connection_id: string; exclude_unsaved?: boolean; exclude_saved?: boolean; exclude_unlimited?: boolean;
+    exclude_limited_upgradable?: boolean; exclude_limited_non_upgradable?: boolean; exclude_unique?: boolean;
+    exclude_from_blockchain?: boolean; sort_by_price?: boolean; offset?: string; limit?: number;
+  };
+  getUserGifts: {
+    user_id: number; exclude_unlimited?: boolean; exclude_limited_upgradable?: boolean;
+    exclude_limited_non_upgradable?: boolean; exclude_unique?: boolean; exclude_from_blockchain?: boolean;
+    sort_by_price?: boolean; offset?: string; limit?: number;
+  };
+  getChatGifts: {
+    chat_id: TelegramChatId; exclude_unsaved?: boolean; exclude_saved?: boolean; exclude_unlimited?: boolean;
+    exclude_limited_upgradable?: boolean; exclude_limited_non_upgradable?: boolean; exclude_unique?: boolean;
+    exclude_from_blockchain?: boolean; sort_by_price?: boolean; offset?: string; limit?: number;
+  };
+  convertGiftToStars: { business_connection_id: string; owned_gift_id: string };
+  upgradeGift: { business_connection_id: string; owned_gift_id: string; keep_original_details?: boolean; star_count?: number };
+  transferGift: { business_connection_id: string; owned_gift_id: string; new_owner_chat_id: number; star_count?: number };
   sendChatAction: { chat_id: TelegramChatId; action: TelegramChatAction; message_thread_id?: number; business_connection_id?: string };
   setMessageReaction: { chat_id: TelegramChatId; message_id: number; reaction?: TelegramReaction[]; is_big?: boolean };
+  getUserProfilePhotos: { user_id: number; offset?: number; limit?: number };
+  getUserProfileAudios: { user_id: number; offset?: number; limit?: number };
+  getUserChatBoosts: { chat_id: TelegramChatId; user_id: number };
+  getBusinessConnection: { business_connection_id: string };
   forwardMessage: { chat_id: TelegramChatId; from_chat_id: TelegramChatId; message_id: number; disable_notification?: boolean; protect_content?: boolean };
   copyMessage: { chat_id: TelegramChatId; from_chat_id: TelegramChatId; message_id: number; caption?: string; parse_mode?: TelegramParseMode };
   editMessageText: { chat_id?: TelegramChatId; message_id?: number; inline_message_id?: string; text?: string; parse_mode?: TelegramParseMode; rich_message?: ReturnType<typeof buildTelegramRichMessage>; reply_markup?: TelegramInlineKeyboardMarkup };
+  editEphemeralMessageText: {
+    chat_id: TelegramChatId; receiver_user_id: number; ephemeral_message_id: number; text?: string;
+    parse_mode?: TelegramParseMode; entities?: TelegramMessageEntity[];
+    rich_message?: ReturnType<typeof buildTelegramRichMessage>; link_preview_options?: Record<string, unknown>;
+    reply_markup?: TelegramInlineKeyboardMarkup;
+  };
+  editEphemeralMessageMedia: {
+    chat_id: TelegramChatId; receiver_user_id: number; ephemeral_message_id: number;
+    media: TelegramInputMedia; reply_markup?: TelegramInlineKeyboardMarkup;
+  };
+  editEphemeralMessageCaption: {
+    chat_id: TelegramChatId; receiver_user_id: number; ephemeral_message_id: number; caption?: string;
+    parse_mode?: TelegramParseMode; caption_entities?: TelegramMessageEntity[]; show_caption_above_media?: boolean;
+    reply_markup?: TelegramInlineKeyboardMarkup;
+  };
+  editEphemeralMessageReplyMarkup: {
+    chat_id: TelegramChatId; receiver_user_id: number; ephemeral_message_id: number;
+    reply_markup?: TelegramInlineKeyboardMarkup;
+  };
+  deleteEphemeralMessage: { chat_id: TelegramChatId; receiver_user_id: number; ephemeral_message_id: number };
   editMessageChecklist: { business_connection_id: string; chat_id: TelegramChatId; message_id: number; checklist: ReturnType<typeof buildTelegramChecklist>; reply_markup?: TelegramInlineKeyboardMarkup };
   deleteMessage: { chat_id: TelegramChatId; message_id: number };
   deleteMessages: { chat_id: TelegramChatId; message_ids: number[] };
@@ -1340,6 +2257,15 @@ export type TelegramParamsFor<M extends TelegramMethod> = M extends keyof Telegr
 
 export interface TelegramApi {
   call<M extends TelegramMethod, T = unknown>(method: M, params: TelegramParamsFor<M>): Promise<T>;
+  getMe(): Promise<TelegramUser>;
+  getChat(chatId?: TelegramChatId): Promise<TelegramChatFullInfo>;
+  getChatAdministrators(returnBots?: boolean, chatId?: TelegramChatId): Promise<TelegramChatMember[]>;
+  getChatMemberCount(chatId?: TelegramChatId): Promise<number>;
+  getChatMember(userId?: string | number, chatId?: TelegramChatId): Promise<TelegramChatMember>;
+  getUserProfilePhotos(options?: TelegramProfileListOptions, userId?: string | number): Promise<TelegramUserProfilePhotos>;
+  getUserProfileAudios(options?: TelegramProfileListOptions, userId?: string | number): Promise<TelegramUserProfileAudios>;
+  getUserChatBoosts(userId?: string | number, chatId?: TelegramChatId): Promise<TelegramUserChatBoosts>;
+  getBusinessConnection(businessConnectionId?: string): Promise<TelegramBusinessConnection>;
   sendPhoto(photo: string, caption?: string): Promise<unknown>;
   sendSticker(sticker: string, emoji?: string): Promise<unknown>;
   sendDocument(document: string, caption?: string): Promise<unknown>;
@@ -1357,9 +2283,27 @@ export interface TelegramApi {
   sendRichMessage(richMessage: TelegramInputRichMessage, options?: TelegramSendRichMessageOptions): Promise<TelegramMessage>;
   sendRichMessageDraft(draftId: number, richMessage: TelegramInputRichMessage, options?: TelegramRichMessageDraftOptions): Promise<boolean>;
   editRichMessage(richMessage: TelegramInputRichMessage, messageId?: string | number): Promise<TelegramMessage | boolean>;
+  editEphemeralMessageText(text: string, target?: TelegramEphemeralMessageTarget, options?: TelegramEditEphemeralTextOptions): Promise<boolean>;
+  editEphemeralRichMessage(richMessage: TelegramInputRichMessage, target?: TelegramEphemeralMessageTarget, options?: TelegramEditEphemeralRichMessageOptions): Promise<boolean>;
+  editEphemeralMessageMedia(media: TelegramInputMedia, target?: TelegramEphemeralMessageTarget, replyMarkup?: TelegramInlineKeyboardMarkup): Promise<boolean>;
+  editEphemeralMessageCaption(caption?: string, target?: TelegramEphemeralMessageTarget, options?: TelegramEditEphemeralCaptionOptions): Promise<boolean>;
+  editEphemeralMessageReplyMarkup(target?: TelegramEphemeralMessageTarget, replyMarkup?: TelegramInlineKeyboardMarkup): Promise<boolean>;
+  deleteEphemeralMessage(target?: TelegramEphemeralMessageTarget): Promise<boolean>;
   sendChecklist(checklist: TelegramInputChecklist, options?: TelegramSendChecklistOptions): Promise<TelegramMessage>;
   editChecklist(checklist: TelegramInputChecklist, options?: TelegramEditChecklistOptions): Promise<TelegramMessage>;
   sendInvoice(invoice: TelegramInvoiceOptions): Promise<unknown>;
+  getAvailableGifts(): Promise<TelegramGifts>;
+  sendGift(giftId: string, options?: TelegramSendGiftOptions): Promise<boolean>;
+  giftPremiumSubscription(monthCount: 3 | 6 | 12, options?: TelegramPremiumGiftOptions): Promise<boolean>;
+  setBusinessAccountGiftSettings(showGiftButton: boolean, acceptedGiftTypes: TelegramAcceptedGiftTypes, businessConnectionId?: string): Promise<boolean>;
+  getBusinessAccountStarBalance(businessConnectionId?: string): Promise<TelegramStarAmount>;
+  transferBusinessAccountStars(starCount: number, businessConnectionId?: string): Promise<boolean>;
+  getBusinessAccountGifts(options?: TelegramOwnedGiftListOptions, businessConnectionId?: string): Promise<TelegramOwnedGifts>;
+  getUserGifts(options?: TelegramOwnedGiftListOptions, userId?: string | number): Promise<TelegramOwnedGifts>;
+  getChatGifts(options?: TelegramOwnedGiftListOptions, chatId?: TelegramChatId): Promise<TelegramOwnedGifts>;
+  convertGiftToStars(ownedGiftId: string, businessConnectionId?: string): Promise<boolean>;
+  upgradeGift(ownedGiftId: string, options?: TelegramUpgradeGiftOptions, businessConnectionId?: string): Promise<boolean>;
+  transferGift(ownedGiftId: string, newOwnerChatId: string | number, starCount?: number, businessConnectionId?: string): Promise<boolean>;
   sendButtons(text: string, buttons: TelegramInlineButton[]): Promise<unknown>;
   editMessage(text: string, messageId?: string): Promise<unknown>;
   deleteMessage(messageId?: string): Promise<unknown>;

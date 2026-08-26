@@ -3,17 +3,29 @@ import { runFlowFunction } from './functions';
 import { parseTelegramUpdate, type ParsedTelegramUpdate } from './telegram-events';
 import type { BotContext } from './types';
 import type {
+  TelegramAcceptedGiftTypes,
   TelegramAdministratorRights,
   TelegramApi,
+  TelegramBusinessConnection,
   TelegramChatAction,
+  TelegramChatFullInfo,
+  TelegramChatMember,
   TelegramChatPermissions,
+  TelegramEphemeralMessageTarget,
   TelegramForumTopic,
+  TelegramGifts,
   TelegramMessage,
   TelegramMethod,
+  TelegramOwnedGifts,
   TelegramParamsFor,
   TelegramParseMode,
+  TelegramStarAmount,
   TelegramUpdate,
   TelegramUpdateType,
+  TelegramUser,
+  TelegramUserChatBoosts,
+  TelegramUserProfileAudios,
+  TelegramUserProfilePhotos,
 } from './telegram';
 import {
   TELEGRAM_ADMINISTRATOR_RIGHT_FIELDS,
@@ -26,6 +38,32 @@ import {
   buildTelegramForumTopicTarget,
   buildTelegramChecklistEdit,
   buildTelegramChecklistSend,
+  buildTelegramBusinessGiftSettings,
+  buildTelegramBusinessGiftsQuery,
+  buildTelegramBusinessStarBalance,
+  buildTelegramBusinessStarsTransfer,
+  buildTelegramChatGiftsQuery,
+  buildTelegramGiftConversion,
+  buildTelegramGiftSend,
+  buildTelegramGiftTransfer,
+  buildTelegramGiftUpgrade,
+  buildTelegramPremiumSubscriptionGift,
+  buildTelegramUserGiftsQuery,
+  buildTelegramBotProfileQuery,
+  buildTelegramBusinessConnectionLookup,
+  buildTelegramChatAdministratorsLookup,
+  buildTelegramChatLookup,
+  buildTelegramChatMemberCountLookup,
+  buildTelegramChatMemberLookup,
+  buildTelegramUserChatBoostsLookup,
+  buildTelegramUserProfileAudiosQuery,
+  buildTelegramUserProfilePhotosQuery,
+  buildTelegramEphemeralCaptionEdit,
+  buildTelegramEphemeralDelete,
+  buildTelegramEphemeralMediaEdit,
+  buildTelegramEphemeralReplyMarkupEdit,
+  buildTelegramEphemeralRichMessageEdit,
+  buildTelegramEphemeralTextEdit,
   buildTelegramMessageDraft,
   buildTelegramRichMessageDraft,
   buildTelegramRichMessageEdit,
@@ -202,6 +240,21 @@ function currentMessageThreadId(context: Pick<BotContext, 'messageThreadId'>, co
   return id;
 }
 
+function currentEphemeralTarget(
+  event: ParsedTelegramUpdate,
+  target: TelegramEphemeralMessageTarget = {},
+) {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) {
+    throw new Error('Telegram ephemeral message target must be an object.');
+  }
+  const unknown = Object.keys(target).find((key) => !['receiverUserId', 'ephemeralMessageId'].includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram ephemeral message target: ${unknown}.`);
+  return {
+    receiverUserId: target.receiverUserId ?? event.user?.id ?? '',
+    ephemeralMessageId: target.ephemeralMessageId ?? event.ephemeralMessageId ?? '',
+  };
+}
+
 function telegramText(value: string, label: string, maximum: number, minimum = 1) {
   const text = String(value ?? '');
   const length = Array.from(text).length;
@@ -322,6 +375,7 @@ export function createTelegramContext(
     chatId: event.chatId,
     userId: event.user?.id,
     messageId: event.messageId,
+    ephemeralMessageId: event.ephemeralMessageId,
     messageThreadId: event.messageThreadId,
     draftId: event.draftId,
     businessConnectionId: event.businessConnectionId,
@@ -361,6 +415,45 @@ export function createTelegramContext(
   context.telegram = {
     call<M extends TelegramMethod, T = unknown>(method: M, params: TelegramParamsFor<M>) {
       return client.call<M, T>(method, params);
+    },
+    getMe() {
+      return client.call<'getMe', TelegramUser>('getMe', buildTelegramBotProfileQuery());
+    },
+    getChat(targetChatId) {
+      return client.call<'getChat', TelegramChatFullInfo>('getChat', buildTelegramChatLookup(targetChatId ?? requireChat()));
+    },
+    getChatAdministrators(returnBots, targetChatId) {
+      return client.call<'getChatAdministrators', TelegramChatMember[]>('getChatAdministrators', buildTelegramChatAdministratorsLookup(
+        targetChatId ?? requireChat(), returnBots,
+      ));
+    },
+    getChatMemberCount(targetChatId) {
+      return client.call<'getChatMemberCount', number>('getChatMemberCount', buildTelegramChatMemberCountLookup(targetChatId ?? requireChat()));
+    },
+    getChatMember(targetUserId, targetChatId) {
+      return client.call<'getChatMember', TelegramChatMember>('getChatMember', buildTelegramChatMemberLookup(
+        targetChatId ?? requireChat(), targetUserId ?? event.user?.id ?? '',
+      ));
+    },
+    getUserProfilePhotos(listOptions = {}, targetUserId) {
+      return client.call<'getUserProfilePhotos', TelegramUserProfilePhotos>('getUserProfilePhotos', buildTelegramUserProfilePhotosQuery(
+        targetUserId ?? event.user?.id ?? '', listOptions,
+      ));
+    },
+    getUserProfileAudios(listOptions = {}, targetUserId) {
+      return client.call<'getUserProfileAudios', TelegramUserProfileAudios>('getUserProfileAudios', buildTelegramUserProfileAudiosQuery(
+        targetUserId ?? event.user?.id ?? '', listOptions,
+      ));
+    },
+    getUserChatBoosts(targetUserId, targetChatId) {
+      return client.call<'getUserChatBoosts', TelegramUserChatBoosts>('getUserChatBoosts', buildTelegramUserChatBoostsLookup(
+        targetChatId ?? requireChat(), targetUserId ?? event.user?.id ?? '',
+      ));
+    },
+    getBusinessConnection(businessConnectionId) {
+      return client.call<'getBusinessConnection', TelegramBusinessConnection>('getBusinessConnection', buildTelegramBusinessConnectionLookup(
+        businessConnectionId || event.businessConnectionId || '',
+      ));
     },
     sendPhoto(photo, caption) { return client.call('sendPhoto', captionBody('photo', photo, caption) as never); },
     sendSticker(sticker, emoji) {
@@ -458,6 +551,48 @@ export function createTelegramContext(
         inlineMessageId ? '' : requireChat(), messageId ?? event.messageId ?? '', richMessage, inlineMessageId,
       ));
     },
+    editEphemeralMessageText(text, target, editOptions = {}) {
+      const current = currentEphemeralTarget(event, target);
+      return client.call<'editEphemeralMessageText', boolean>('editEphemeralMessageText', buildTelegramEphemeralTextEdit(
+        requireChat(), current.receiverUserId, current.ephemeralMessageId, text, {
+          ...editOptions,
+          parseMode: editOptions.entities ? editOptions.parseMode : editOptions.parseMode ?? options.parseMode,
+        },
+      ));
+    },
+    editEphemeralRichMessage(richMessage, target, editOptions = {}) {
+      const current = currentEphemeralTarget(event, target);
+      return client.call<'editEphemeralMessageText', boolean>('editEphemeralMessageText', buildTelegramEphemeralRichMessageEdit(
+        requireChat(), current.receiverUserId, current.ephemeralMessageId, richMessage, editOptions,
+      ));
+    },
+    editEphemeralMessageMedia(media, target, replyMarkup) {
+      const current = currentEphemeralTarget(event, target);
+      return client.call<'editEphemeralMessageMedia', boolean>('editEphemeralMessageMedia', buildTelegramEphemeralMediaEdit(
+        requireChat(), current.receiverUserId, current.ephemeralMessageId, media, replyMarkup,
+      ));
+    },
+    editEphemeralMessageCaption(caption = '', target, editOptions = {}) {
+      const current = currentEphemeralTarget(event, target);
+      return client.call<'editEphemeralMessageCaption', boolean>('editEphemeralMessageCaption', buildTelegramEphemeralCaptionEdit(
+        requireChat(), current.receiverUserId, current.ephemeralMessageId, caption, {
+          ...editOptions,
+          parseMode: editOptions.captionEntities ? editOptions.parseMode : editOptions.parseMode ?? options.parseMode,
+        },
+      ));
+    },
+    editEphemeralMessageReplyMarkup(target, replyMarkup) {
+      const current = currentEphemeralTarget(event, target);
+      return client.call<'editEphemeralMessageReplyMarkup', boolean>('editEphemeralMessageReplyMarkup', buildTelegramEphemeralReplyMarkupEdit(
+        requireChat(), current.receiverUserId, current.ephemeralMessageId, replyMarkup,
+      ));
+    },
+    deleteEphemeralMessage(target) {
+      const current = currentEphemeralTarget(event, target);
+      return client.call<'deleteEphemeralMessage', boolean>('deleteEphemeralMessage', buildTelegramEphemeralDelete(
+        requireChat(), current.receiverUserId, current.ephemeralMessageId,
+      ));
+    },
     sendChecklist(checklist, actionOptions = {}) {
       if (!actionOptions || typeof actionOptions !== 'object' || Array.isArray(actionOptions)) {
         throw new Error('Telegram sendChecklist options must be an object.');
@@ -492,6 +627,74 @@ export function createTelegramContext(
         disableNotification: invoice.disableNotification ?? options.disableNotification,
         protectContent: invoice.protectContent ?? options.protectContent,
       }));
+    },
+    getAvailableGifts() {
+      return client.call<'getAvailableGifts', TelegramGifts>('getAvailableGifts', {});
+    },
+    sendGift(giftId, actionOptions = {}) {
+      const targetOptions = actionOptions.userId === undefined && actionOptions.chatId === undefined
+        ? { ...actionOptions, userId: event.user?.id ?? '' } : actionOptions;
+      return client.call<'sendGift', boolean>('sendGift', buildTelegramGiftSend(giftId, {
+        ...targetOptions,
+        ...(targetOptions.text === undefined ? {} : {
+          parseMode: targetOptions.textEntities ? targetOptions.parseMode : targetOptions.parseMode ?? options.parseMode,
+        }),
+      }));
+    },
+    giftPremiumSubscription(monthCount, actionOptions = {}) {
+      return client.call<'giftPremiumSubscription', boolean>('giftPremiumSubscription', buildTelegramPremiumSubscriptionGift(
+        actionOptions.userId ?? event.user?.id ?? '', monthCount, {
+          text: actionOptions.text,
+          parseMode: actionOptions.text === undefined ? actionOptions.parseMode
+            : actionOptions.textEntities ? actionOptions.parseMode : actionOptions.parseMode ?? options.parseMode,
+          textEntities: actionOptions.textEntities,
+        },
+      ));
+    },
+    setBusinessAccountGiftSettings(showGiftButton, acceptedGiftTypes: TelegramAcceptedGiftTypes, businessConnectionId) {
+      return client.call<'setBusinessAccountGiftSettings', boolean>('setBusinessAccountGiftSettings', buildTelegramBusinessGiftSettings(
+        businessConnectionId || event.businessConnectionId || '', showGiftButton, acceptedGiftTypes,
+      ));
+    },
+    getBusinessAccountStarBalance(businessConnectionId) {
+      return client.call<'getBusinessAccountStarBalance', TelegramStarAmount>('getBusinessAccountStarBalance', buildTelegramBusinessStarBalance(
+        businessConnectionId || event.businessConnectionId || '',
+      ));
+    },
+    transferBusinessAccountStars(starCount, businessConnectionId) {
+      return client.call<'transferBusinessAccountStars', boolean>('transferBusinessAccountStars', buildTelegramBusinessStarsTransfer(
+        businessConnectionId || event.businessConnectionId || '', starCount,
+      ));
+    },
+    getBusinessAccountGifts(listOptions = {}, businessConnectionId) {
+      return client.call<'getBusinessAccountGifts', TelegramOwnedGifts>('getBusinessAccountGifts', buildTelegramBusinessGiftsQuery(
+        businessConnectionId || event.businessConnectionId || '', listOptions,
+      ));
+    },
+    getUserGifts(listOptions = {}, userId) {
+      return client.call<'getUserGifts', TelegramOwnedGifts>('getUserGifts', buildTelegramUserGiftsQuery(
+        userId ?? event.user?.id ?? '', listOptions,
+      ));
+    },
+    getChatGifts(listOptions = {}, targetChatId) {
+      return client.call<'getChatGifts', TelegramOwnedGifts>('getChatGifts', buildTelegramChatGiftsQuery(
+        targetChatId ?? requireChat(), listOptions,
+      ));
+    },
+    convertGiftToStars(ownedGiftId, businessConnectionId) {
+      return client.call<'convertGiftToStars', boolean>('convertGiftToStars', buildTelegramGiftConversion(
+        businessConnectionId || event.businessConnectionId || '', ownedGiftId,
+      ));
+    },
+    upgradeGift(ownedGiftId, upgradeOptions = {}, businessConnectionId) {
+      return client.call<'upgradeGift', boolean>('upgradeGift', buildTelegramGiftUpgrade(
+        businessConnectionId || event.businessConnectionId || '', ownedGiftId, upgradeOptions,
+      ));
+    },
+    transferGift(ownedGiftId, newOwnerChatId, starCount, businessConnectionId) {
+      return client.call<'transferGift', boolean>('transferGift', buildTelegramGiftTransfer(
+        businessConnectionId || event.businessConnectionId || '', ownedGiftId, newOwnerChatId, starCount,
+      ));
     },
     sendButtons(text, buttons) {
       if (!buttons.length) throw new Error('At least one Telegram inline button is required.');

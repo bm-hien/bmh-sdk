@@ -11,6 +11,7 @@ export type BotContext = {
   chatId?: string;
   userId?: string;
   messageId?: string;
+  ephemeralMessageId?: string;
   messageThreadId?: string;
   draftId?: string;
   businessConnectionId?: string;

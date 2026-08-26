@@ -497,6 +497,76 @@ test('rich-message helpers send, stream, edit, and enforce Telegram structural l
   }), /private chats/);
 });
 
+test('ephemeral-message lifecycle helpers target, edit, and delete the current receiver safely', async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      requests.push({ method: String(input).split('/').at(-1)!, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(true);
+    },
+  });
+  const update = messageUpdate(49, 'ephemeral');
+  update.message!.chat = { id: 7, type: 'private', first_name: 'Minh' };
+  update.message!.ephemeral_message_id = 901;
+  const context = createTelegramContext(update, client, { parseMode: 'HTML' })!;
+  assert.equal(context.ephemeralMessageId, '901');
+
+  assert.equal(await context.telegram.editEphemeralMessageText('<b>Updated</b>'), true);
+  assert.equal(await context.telegram.editEphemeralRichMessage({ markdown: '**Rich update**' }), true);
+  assert.equal(await context.telegram.editEphemeralMessageMedia({
+    type: 'photo', media: 'https://example.com/new.jpg', caption: 'New photo', has_spoiler: true,
+  }), true);
+  assert.equal(await context.telegram.editEphemeralMessageCaption('Caption', undefined, {
+    captionEntities: [{ type: 'bold', offset: 0, length: 7 }], showCaptionAboveMedia: true,
+  }), true);
+  assert.equal(await context.telegram.editEphemeralMessageReplyMarkup({ receiverUserId: 8, ephemeralMessageId: 902 }, {
+    inline_keyboard: [[{ text: 'Unavailable', disabled: {} }]],
+  }), true);
+  assert.equal(await context.telegram.deleteEphemeralMessage(), true);
+
+  assert.deepEqual(requests.map((request) => request.method), [
+    'editEphemeralMessageText', 'editEphemeralMessageText', 'editEphemeralMessageMedia',
+    'editEphemeralMessageCaption', 'editEphemeralMessageReplyMarkup', 'deleteEphemeralMessage',
+  ]);
+  assert.deepEqual(requests[0].body, {
+    chat_id: '7', receiver_user_id: 7, ephemeral_message_id: 901, text: '<b>Updated</b>', parse_mode: 'HTML',
+  });
+  assert.deepEqual(requests[1].body, {
+    chat_id: '7', receiver_user_id: 7, ephemeral_message_id: 901,
+    rich_message: { markdown: '**Rich update**' },
+  });
+  assert.deepEqual(requests[2].body, {
+    chat_id: '7', receiver_user_id: 7, ephemeral_message_id: 901,
+    media: { type: 'photo', media: 'https://example.com/new.jpg', caption: 'New photo', has_spoiler: true },
+  });
+  assert.deepEqual(requests[3].body, {
+    chat_id: '7', receiver_user_id: 7, ephemeral_message_id: 901, caption: 'Caption',
+    caption_entities: [{ type: 'bold', offset: 0, length: 7 }], show_caption_above_media: true,
+  });
+  assert.deepEqual(requests[4].body, {
+    chat_id: '7', receiver_user_id: 8, ephemeral_message_id: 902,
+    reply_markup: { inline_keyboard: [[{ text: 'Unavailable', disabled: {} }]] },
+  });
+  assert.deepEqual(requests[5].body, { chat_id: '7', receiver_user_id: 7, ephemeral_message_id: 901 });
+
+  const ordinary = createTelegramContext(messageUpdate(50), client)!;
+  assert.throws(() => ordinary.telegram.deleteEphemeralMessage(), /ephemeral message ID/);
+  assert.throws(() => context.telegram.deleteEphemeralMessage({ unsupported: 1 } as never), /Unsupported Telegram ephemeral message target/);
+  assert.throws(() => context.telegram.editEphemeralMessageText(''), /1-4096/);
+  assert.throws(() => context.telegram.editEphemeralRichMessage({ blocks: [{ type: 'thinking', text: 'No' }] }), /only in rich message drafts/);
+  assert.throws(() => context.telegram.editEphemeralMessageMedia({ type: 'voice' as never, media: 'file' }), /media type/);
+  assert.throws(() => context.telegram.editEphemeralMessageMedia({
+    type: 'photo', media: 'file', parse_mode: 'HTML', caption_entities: [{ type: 'bold', offset: 0, length: 1 }],
+  }), /cannot use parse_mode and caption_entities together/);
+  assert.throws(() => context.telegram.editEphemeralMessageCaption('x'.repeat(1025)), /0-1024/);
+  assert.throws(() => context.telegram.editEphemeralMessageReplyMarkup(undefined, {
+    inline_keyboard: [[{ text: 'Login', login_url: { url: 'https://example.com' } }]],
+  }), /cannot use login_url/);
+  assert.throws(() => context.telegram.editEphemeralMessageReplyMarkup(undefined, {
+    inline_keyboard: [[{ text: 'Conflict', callback_data: 'x', url: 'https://example.com' }]],
+  }), /exactly one action/);
+});
+
 test('Business checklist helpers inherit update context and validate the complete input contract', async () => {
   const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
   const client = new TelegramClient('123:test', {
@@ -661,6 +731,82 @@ test('invoice, Stars refund, and subscription helpers validate and use completed
     prices: [{ label: 'One', amount: 10 }], maxTipAmount: 5,
   }), /do not support tips/);
   assert.throws(() => createTelegramContext(messageUpdate(), client)!.telegram.refundStarPayment(), /payment charge ID/);
+});
+
+test('gift catalog, Premium, Business Stars, and owned-gift helpers use contextual defaults safely', async () => {
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      const method = String(input).split('/').at(-1)!;
+      calls.push({ method, body: JSON.parse(String(init?.body ?? '{}')) });
+      const result = method === 'getAvailableGifts' ? { gifts: [{ id: 'gift-1', sticker: {}, star_count: 25 }] }
+        : method === 'getBusinessAccountStarBalance' ? { amount: 125, nanostar_amount: 0 }
+          : method.startsWith('get') ? { total_count: 0, gifts: [] } : true;
+      return json(result);
+    },
+  });
+  const context = createTelegramContext({
+    update_id: 60,
+    business_message: {
+      business_connection_id: 'business-60', message_id: 600, date: 1,
+      chat: { id: -10060, type: 'supergroup' }, from: telegramUser(60), text: 'gift',
+    },
+  }, client, { parseMode: 'HTML' })!;
+  const accepted = {
+    unlimited_gifts: true, limited_gifts: true, unique_gifts: true,
+    premium_subscription: true, gifts_from_channels: false,
+  };
+
+  const catalog = await context.telegram.getAvailableGifts();
+  assert.equal(catalog.gifts[0].id, 'gift-1');
+  assert.equal(await context.telegram.sendGift('gift-1', { text: '<b>For you</b>', payForUpgrade: true }), true);
+  assert.equal(await context.telegram.sendGift('gift-2', { chatId: '@channel' }), true);
+  assert.equal(await context.telegram.giftPremiumSubscription(12, { text: 'Premium' }), true);
+  assert.equal(await context.telegram.setBusinessAccountGiftSettings(true, accepted), true);
+  const balance = await context.telegram.getBusinessAccountStarBalance();
+  assert.equal(balance.amount, 125);
+  assert.equal(await context.telegram.transferBusinessAccountStars(25), true);
+  assert.equal((await context.telegram.getBusinessAccountGifts({ excludeUnsaved: true, limit: 20 })).total_count, 0);
+  assert.equal((await context.telegram.getUserGifts({ excludeUnlimited: true, limit: 10 })).total_count, 0);
+  assert.equal((await context.telegram.getChatGifts({ excludeSaved: true, offset: 'next', limit: 5 })).total_count, 0);
+  assert.equal(await context.telegram.convertGiftToStars('owned-1'), true);
+  assert.equal(await context.telegram.upgradeGift('owned-2', { keepOriginalDetails: true, starCount: 0 }), true);
+  assert.equal(await context.telegram.transferGift('owned-3', 61, 4), true);
+
+  assert.deepEqual(calls.map((call) => call.method), [
+    'getAvailableGifts', 'sendGift', 'sendGift', 'giftPremiumSubscription', 'setBusinessAccountGiftSettings',
+    'getBusinessAccountStarBalance', 'transferBusinessAccountStars', 'getBusinessAccountGifts',
+    'getUserGifts', 'getChatGifts', 'convertGiftToStars', 'upgradeGift', 'transferGift',
+  ]);
+  assert.deepEqual(calls[1].body, {
+    user_id: 60, gift_id: 'gift-1', pay_for_upgrade: true, text: '<b>For you</b>', text_parse_mode: 'HTML',
+  });
+  assert.deepEqual(calls[2].body, { chat_id: '@channel', gift_id: 'gift-2' });
+  assert.equal(calls[3].body.star_count, 2500);
+  assert.equal(calls[4].body.business_connection_id, 'business-60');
+  assert.deepEqual(calls[4].body.accepted_gift_types, accepted);
+  assert.equal(calls[7].body.exclude_unsaved, true);
+  assert.equal(calls[8].body.user_id, 60);
+  assert.equal(calls[9].body.chat_id, '-10060');
+  assert.equal(calls[11].body.star_count, 0);
+  assert.equal(calls[12].body.new_owner_chat_id, 61);
+
+  assert.throws(() => context.telegram.sendGift('gift', { userId: 60, chatId: '@channel' }), /exactly one of userId or chatId/);
+  assert.throws(() => context.telegram.giftPremiumSubscription(4 as never), /exactly 3, 6, or 12 months/);
+  assert.throws(() => context.telegram.sendGift('gift', { text: 'x'.repeat(129) }), /0-128 characters/);
+  assert.throws(() => context.telegram.sendGift('gift', {
+    text: 'bold', parseMode: 'HTML', textEntities: [{ type: 'bold', offset: 0, length: 4 }],
+  }), /mutually exclusive/);
+  assert.throws(() => context.telegram.sendGift('gift', {
+    text: 'link', textEntities: [{ type: 'text_link', offset: 0, length: 4, url: 'https://example.com' }],
+  }), /does not support the text_link entity type/);
+  assert.throws(() => context.telegram.setBusinessAccountGiftSettings(true, {
+    ...accepted, unique_gifts: undefined,
+  } as never), /unique_gifts must be boolean/);
+  assert.throws(() => context.telegram.transferBusinessAccountStars(10_001), /1 to 10000/);
+  assert.throws(() => context.telegram.getBusinessAccountGifts({ excludeSaved: true, excludeUnsaved: true }), /cannot exclude both saved and unsaved/);
+  assert.throws(() => context.telegram.getUserGifts({ excludeSaved: true }), /Unsupported Telegram owned gift list option/);
+  assert.throws(() => context.telegram.transferGift('owned', -1), /positive integer/);
 });
 
 test('webhook validates method, secret, JSON, update IDs, and dispatches safely', async () => {
