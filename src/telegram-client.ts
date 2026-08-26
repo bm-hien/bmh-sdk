@@ -27,6 +27,9 @@ import {
   buildTelegramChecklistEdit,
   buildTelegramChecklistSend,
   buildTelegramMessageDraft,
+  buildTelegramRichMessageDraft,
+  buildTelegramRichMessageEdit,
+  buildTelegramRichMessageSend,
   buildTelegramGuestQueryAnswer,
   buildTelegramInlineQueryAnswer,
   buildTelegramPreCheckoutQueryAnswer,
@@ -426,6 +429,33 @@ export function createTelegramContext(
           messageThreadId: draftOptions.messageThreadId ?? currentThread,
           parseMode: draftOptions.parseMode ?? options.parseMode,
         },
+      ));
+    },
+    sendRichMessage(richMessage, actionOptions = {}) {
+      const currentThread = event.messageThreadId ? Number(event.messageThreadId) : undefined;
+      return client.call<'sendRichMessage', TelegramMessage>('sendRichMessage', buildTelegramRichMessageSend(
+        requireChat(), richMessage, {
+          ...actionOptions,
+          businessConnectionId: actionOptions.businessConnectionId ?? event.businessConnectionId,
+          messageThreadId: actionOptions.messageThreadId ?? currentThread,
+          disableNotification: actionOptions.disableNotification ?? options.disableNotification,
+          protectContent: actionOptions.protectContent ?? options.protectContent,
+        },
+      ));
+    },
+    sendRichMessageDraft(draftId, richMessage, draftOptions = {}) {
+      if (event.chat?.type !== 'private') throw new Error('Telegram rich message drafts are available only in private chats.');
+      const currentThread = event.messageThreadId ? Number(event.messageThreadId) : undefined;
+      return client.call<'sendRichMessageDraft', boolean>('sendRichMessageDraft', buildTelegramRichMessageDraft(
+        requireChat(), draftId, richMessage, {
+          ...draftOptions, messageThreadId: draftOptions.messageThreadId ?? currentThread,
+        },
+      ));
+    },
+    editRichMessage(richMessage, messageId) {
+      const inlineMessageId = !messageId ? event.inlineMessageId : undefined;
+      return client.call<'editMessageText', TelegramMessage | boolean>('editMessageText', buildTelegramRichMessageEdit(
+        inlineMessageId ? '' : requireChat(), messageId ?? event.messageId ?? '', richMessage, inlineMessageId,
       ));
     },
     sendChecklist(checklist, actionOptions = {}) {

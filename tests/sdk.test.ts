@@ -424,6 +424,79 @@ test('message drafts validate private-chat streaming previews and return typed s
   assert.equal(stoppedContext.draftId, '-91');
 });
 
+test('rich-message helpers send, stream, edit, and enforce Telegram structural limits', async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      const method = String(input).split('/').at(-1)!;
+      requests.push({ method, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(method === 'sendRichMessageDraft'
+        ? true : { message_id: method === 'sendRichMessage' ? 601 : 600, date: 1, chat: { id: 7, type: 'private' } });
+    },
+  });
+  const update = messageUpdate(47, 'rich');
+  update.message!.chat = { id: 7, type: 'private', first_name: 'Minh' };
+  update.message!.message_thread_id = 12;
+  const context = createTelegramContext(update, client, { disableNotification: false, protectContent: false })!;
+
+  const sent = await context.telegram.sendRichMessage({
+    markdown: '# Launch\n\nA **rich** result.', isRtl: false, skipEntityDetection: true,
+  }, {
+    disableNotification: true,
+    ephemeralMessageParameters: { receiver_user_id: 7, callback_query_id: 'callback-47' },
+  });
+  assert.equal(sent.message_id, 601);
+  assert.equal(await context.telegram.sendRichMessageDraft(-47, {
+    blocks: [{ type: 'thinking', text: 'Thinking…' }],
+  }, { canStop: true, keepOnStop: true }), true);
+  const edited = await context.telegram.editRichMessage({
+    blocks: [
+      { type: 'heading', text: 'Result', size: 2 },
+      { type: 'table', cells: [[{ text: 'Key', is_header: true }, { text: 'Value' }]], is_bordered: true },
+      { type: 'buttons', buttons: [{ text: 'Continue', callback_data: 'continue', style: 'link' }], align: 'right' },
+    ],
+  });
+  assert.equal(typeof edited === 'object' && edited.message_id, 600);
+
+  assert.deepEqual(requests.map((request) => request.method), ['sendRichMessage', 'sendRichMessageDraft', 'editMessageText']);
+  assert.deepEqual(requests[0].body, {
+    chat_id: '7', message_thread_id: 12,
+    ephemeral_message_parameters: { receiver_user_id: 7, callback_query_id: 'callback-47' },
+    rich_message: { markdown: '# Launch\n\nA **rich** result.', is_rtl: false, skip_entity_detection: true },
+    disable_notification: true, protect_content: false,
+  });
+  assert.deepEqual(requests[1].body, {
+    chat_id: 7, message_thread_id: 12, draft_id: -47,
+    rich_message: { blocks: [{ type: 'thinking', text: 'Thinking…' }] }, can_stop: true, keep_on_stop: true,
+  });
+  assert.equal(requests[2].body.chat_id, '7');
+  assert.equal(requests[2].body.message_id, 470);
+  assert.equal((requests[2].body.rich_message as { blocks: unknown[] }).blocks.length, 3);
+
+  assert.throws(() => context.telegram.sendRichMessage({ html: '<b>x</b>', markdown: '**x**' } as never), /exactly one/);
+  assert.throws(() => context.telegram.sendRichMessage({ markdown: 'x'.repeat(32_769) }), /at most 32768 characters/);
+  assert.throws(() => context.telegram.sendRichMessage({ blocks: [{ type: 'heading', text: 'Bad', size: 7 }] }), /size must be an integer from 1 to 6/);
+  assert.throws(() => context.telegram.sendRichMessage({ blocks: [{
+    type: 'table', cells: [[...Array.from({ length: 21 }, () => ({ text: 'cell' }))]],
+  }] }), /at most 20 columns/);
+  assert.throws(() => context.telegram.sendRichMessage({ blocks: [{
+    type: 'buttons', buttons: [{ text: 'Bad', url: 'https://example.com', callback_data: 'both' }],
+  }] }), /exactly one action/);
+  assert.throws(() => context.telegram.sendRichMessage({ blocks: [{ type: 'thinking', text: 'Thinking' }] }), /only in rich message drafts/);
+  assert.throws(() => context.telegram.sendRichMessageDraft(1, {
+    markdown: '![image](tg://photo?id=hero)', media: [{ id: 'hero', media: { type: 'photo', media: 'https://example.com/image.jpg' } }],
+  }), /previously uploaded media file IDs/);
+  assert.throws(() => context.telegram.sendRichMessage({
+    markdown: 'media', media: [
+      { id: 'same', media: { type: 'photo', media: 'file-a' } },
+      { id: 'same', media: { type: 'photo', media: 'file-b' } },
+    ],
+  }), /media IDs must be unique/);
+  assert.throws(() => createTelegramContext(messageUpdate(48), client)!.telegram.sendRichMessageDraft(1, {
+    markdown: 'Thinking',
+  }), /private chats/);
+});
+
 test('Business checklist helpers inherit update context and validate the complete input contract', async () => {
   const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
   const client = new TelegramClient('123:test', {

@@ -291,6 +291,101 @@ export type TelegramMessageDraftOptions = {
   canStop?: boolean;
   keepOnStop?: boolean;
 };
+export type TelegramRichText = string | TelegramRichText[] | ({
+  type: string;
+  text?: TelegramRichText;
+} & Record<string, unknown>);
+export type TelegramInputRichMedia = {
+  type: 'animation' | 'audio' | 'document' | 'photo' | 'video' | 'voice_note';
+  media: string;
+  [key: string]: unknown;
+};
+export type TelegramInputRichMessageMedia = {
+  id: string;
+  media: TelegramInputRichMedia;
+};
+export type TelegramRichBlockCaption = { text: TelegramRichText; credit?: TelegramRichText };
+export type TelegramRichBlockTableCell = {
+  text?: TelegramRichText;
+  is_header?: true;
+  colspan?: number;
+  rowspan?: number;
+  align?: 'left' | 'center' | 'right';
+  valign?: 'top' | 'middle' | 'bottom';
+};
+export type TelegramRichMessageButton = {
+  text: TelegramRichText;
+  style?: 'danger' | 'success' | 'primary' | 'link';
+  url?: string;
+  callback_data?: string;
+  web_app?: Record<string, unknown>;
+  login_url?: Record<string, unknown>;
+  switch_inline_query?: string;
+  switch_inline_query_current_chat?: string;
+  switch_inline_query_chosen_chat?: Record<string, unknown>;
+  copy_text?: Record<string, unknown>;
+  disabled?: Record<string, unknown>;
+};
+export type TelegramInputRichBlockListItem = {
+  blocks: TelegramInputRichBlock[];
+  has_checkbox?: true;
+  is_checked?: true;
+  value?: number;
+  type?: 'a' | 'A' | 'i' | 'I' | '1';
+};
+export type TelegramInputRichBlock = {
+  type: 'paragraph' | 'heading' | 'pre' | 'footer' | 'divider' | 'mathematical_expression' | 'anchor' |
+    'list' | 'blockquote' | 'expandable_blockquote' | 'pullquote' | 'collage' | 'slideshow' | 'table' |
+    'details' | 'map' | 'buttons' | 'animation' | 'audio' | 'document' | 'photo' | 'video' | 'voice_note' |
+    'thinking';
+  text?: TelegramRichText;
+  expression?: string;
+  name?: string;
+  size?: number;
+  language?: string;
+  items?: TelegramInputRichBlockListItem[];
+  blocks?: TelegramInputRichBlock[];
+  credit?: TelegramRichText;
+  caption?: TelegramRichText | TelegramRichBlockCaption;
+  cells?: TelegramRichBlockTableCell[][];
+  summary?: TelegramRichText;
+  buttons?: TelegramRichMessageButton[];
+  animation?: TelegramInputRichMedia;
+  audio?: TelegramInputRichMedia;
+  document?: TelegramInputRichMedia;
+  photo?: TelegramInputRichMedia;
+  video?: TelegramInputRichMedia;
+  voice_note?: TelegramInputRichMedia;
+  [key: string]: unknown;
+};
+type TelegramInputRichMessageBase = {
+  media?: TelegramInputRichMessageMedia[];
+  isRtl?: boolean;
+  skipEntityDetection?: boolean;
+};
+export type TelegramInputRichMessage = TelegramInputRichMessageBase & (
+  | { html: string; markdown?: never; blocks?: never }
+  | { markdown: string; html?: never; blocks?: never }
+  | { blocks: TelegramInputRichBlock[]; html?: never; markdown?: never }
+);
+export type TelegramSendRichMessageOptions = {
+  businessConnectionId?: string;
+  messageThreadId?: number;
+  directMessagesTopicId?: number;
+  ephemeralMessageParameters?: { receiver_user_id: number; callback_query_id?: string; replace_callback_query_message?: boolean };
+  disableNotification?: boolean;
+  protectContent?: boolean;
+  allowPaidBroadcast?: boolean;
+  messageEffectId?: string;
+  suggestedPostParameters?: Record<string, unknown>;
+  replyParameters?: Record<string, unknown>;
+  replyMarkup?: Record<string, unknown>;
+};
+export type TelegramRichMessageDraftOptions = {
+  messageThreadId?: number;
+  canStop?: boolean;
+  keepOnStop?: boolean;
+};
 export type TelegramInputChecklistTask = {
   id: number;
   text: string;
@@ -602,6 +697,333 @@ export function buildTelegramMessageDraft(
   };
 }
 
+const TELEGRAM_RICH_BLOCK_TYPES = new Set([
+  'paragraph', 'heading', 'pre', 'footer', 'divider', 'mathematical_expression', 'anchor', 'list',
+  'blockquote', 'expandable_blockquote', 'pullquote', 'collage', 'slideshow', 'table', 'details', 'map',
+  'buttons', 'animation', 'audio', 'document', 'photo', 'video', 'voice_note', 'thinking',
+]);
+const TELEGRAM_RICH_MEDIA_TYPES = new Set(['animation', 'audio', 'document', 'photo', 'video', 'voice_note']);
+const TELEGRAM_RICH_BUTTON_ACTIONS = [
+  'url', 'callback_data', 'web_app', 'login_url', 'switch_inline_query', 'switch_inline_query_current_chat',
+  'switch_inline_query_chosen_chat', 'copy_text', 'disabled',
+] as const;
+const TELEGRAM_RICH_MAX_CHARACTERS = 32_768;
+const TELEGRAM_RICH_MAX_BLOCKS = 500;
+const TELEGRAM_RICH_MAX_DEPTH = 16;
+const TELEGRAM_RICH_MAX_MEDIA = 50;
+
+function telegramRichRecord(value: unknown, label: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  return value as Record<string, unknown>;
+}
+
+function telegramRichTextLength(value: unknown, label: string, depth = 0): number {
+  if (depth > TELEGRAM_RICH_MAX_DEPTH) throw new Error(`Telegram rich message formatting exceeds ${TELEGRAM_RICH_MAX_DEPTH} levels.`);
+  if (typeof value === 'string') return Array.from(value).length;
+  if (Array.isArray(value)) return value.reduce((total, item) => total + telegramRichTextLength(item, label, depth + 1), 0);
+  const record = telegramRichRecord(value, label);
+  return record.text === undefined ? 0 : telegramRichTextLength(record.text, label, depth + 1);
+}
+
+function telegramRichMedia(value: unknown, label: string, draft: boolean, expectedType?: string) {
+  const record = telegramRichRecord(value, label);
+  const type = String(record.type ?? '').trim();
+  if (!TELEGRAM_RICH_MEDIA_TYPES.has(type) || (expectedType && type !== expectedType)) {
+    throw new Error(`${label} has an unsupported media type.`);
+  }
+  const media = String(record.media ?? '').trim();
+  if (!media) throw new Error(`${label} requires a media file ID, URL, or attach reference.`);
+  if (draft && /^(?:https?:\/\/|attach:\/\/)/i.test(media)) {
+    throw new Error('Telegram rich message drafts can use only previously uploaded media file IDs.');
+  }
+  return record;
+}
+
+type TelegramRichValidationState = { blocks: number; media: number; characters: number };
+
+function telegramRichBlocks(
+  value: unknown,
+  state: TelegramRichValidationState,
+  mode: 'send' | 'draft' | 'edit',
+  depth = 1,
+) {
+  if (!Array.isArray(value) || value.length === 0) throw new Error('Telegram rich message blocks must be a non-empty array.');
+  if (depth > TELEGRAM_RICH_MAX_DEPTH) throw new Error(`Telegram rich message blocks exceed ${TELEGRAM_RICH_MAX_DEPTH} levels.`);
+  for (const [index, raw] of value.entries()) {
+    const label = `Telegram rich message block ${index + 1}`;
+    const block = telegramRichRecord(raw, label);
+    const type = String(block.type ?? '').trim();
+    if (!TELEGRAM_RICH_BLOCK_TYPES.has(type)) throw new Error(`${label} has an unsupported type: ${type || '(empty)'}.`);
+    state.blocks += 1;
+    if (state.blocks > TELEGRAM_RICH_MAX_BLOCKS) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_BLOCKS} blocks and structural items.`);
+
+    if (['paragraph', 'heading', 'pre', 'footer', 'expandable_blockquote', 'pullquote', 'thinking'].includes(type)) {
+      const length = telegramRichTextLength(block.text, `${label} text`);
+      if (length === 0) throw new Error(`${label} requires text.`);
+      state.characters += length;
+    }
+    if (type === 'thinking' && mode !== 'draft') throw new Error('Telegram rich thinking blocks are available only in rich message drafts.');
+    if (type === 'heading' && (!Number.isSafeInteger(block.size) || Number(block.size) < 1 || Number(block.size) > 6)) {
+      throw new Error(`${label} heading size must be an integer from 1 to 6.`);
+    }
+    if (type === 'mathematical_expression') {
+      const expression = String(block.expression ?? '');
+      if (!expression) throw new Error(`${label} requires a mathematical expression.`);
+      state.characters += Array.from(expression).length;
+    }
+    if (type === 'anchor' && !String(block.name ?? '').trim()) throw new Error(`${label} requires an anchor name.`);
+    if (block.credit !== undefined) state.characters += telegramRichTextLength(block.credit, `${label} credit`);
+    if (block.summary !== undefined) state.characters += telegramRichTextLength(block.summary, `${label} summary`);
+    if (block.caption !== undefined) {
+      const caption = typeof block.caption === 'object' && block.caption && !Array.isArray(block.caption)
+        && ('text' in block.caption || 'credit' in block.caption)
+        ? block.caption as Record<string, unknown> : { text: block.caption };
+      if (caption.text !== undefined) state.characters += telegramRichTextLength(caption.text, `${label} caption`);
+      if (caption.credit !== undefined) state.characters += telegramRichTextLength(caption.credit, `${label} caption credit`);
+    }
+
+    if (['blockquote', 'collage', 'slideshow', 'details'].includes(type)) {
+      telegramRichBlocks(block.blocks, state, mode, depth + 1);
+    }
+    if (type === 'list') {
+      if (!Array.isArray(block.items) || block.items.length === 0) throw new Error(`${label} requires at least one list item.`);
+      for (const [itemIndex, rawItem] of block.items.entries()) {
+        const item = telegramRichRecord(rawItem, `${label} item ${itemIndex + 1}`);
+        state.blocks += 1;
+        if (state.blocks > TELEGRAM_RICH_MAX_BLOCKS) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_BLOCKS} blocks and structural items.`);
+        if (item.type !== undefined && !['a', 'A', 'i', 'I', '1'].includes(String(item.type))) {
+          throw new Error(`${label} item ${itemIndex + 1} has an unsupported ordered-list label type.`);
+        }
+        telegramRichBlocks(item.blocks, state, mode, depth + 1);
+      }
+    }
+    if (type === 'table') {
+      if (!Array.isArray(block.cells) || block.cells.length === 0) throw new Error(`${label} requires at least one table row.`);
+      for (const [rowIndex, rawRow] of block.cells.entries()) {
+        if (!Array.isArray(rawRow) || rawRow.length === 0) throw new Error(`${label} row ${rowIndex + 1} must contain cells.`);
+        const columns = rawRow.reduce((total, rawCell) => {
+          const cell = telegramRichRecord(rawCell, `${label} row ${rowIndex + 1} cell`);
+          if (cell.text !== undefined) state.characters += telegramRichTextLength(cell.text, `${label} cell text`);
+          const span = cell.colspan === undefined ? 1 : Number(cell.colspan);
+          if (!Number.isSafeInteger(span) || span < 1) throw new Error(`${label} cell colspan must be a positive integer.`);
+          return total + span;
+        }, 0);
+        if (columns > 20) throw new Error('Telegram rich message tables support at most 20 columns.');
+        state.blocks += 1;
+        if (state.blocks > TELEGRAM_RICH_MAX_BLOCKS) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_BLOCKS} blocks and structural items.`);
+      }
+    }
+    if (type === 'buttons') {
+      if (!Array.isArray(block.buttons) || block.buttons.length < 1 || block.buttons.length > 8) {
+        throw new Error(`${label} requires 1-8 buttons.`);
+      }
+      if (block.align !== undefined && !['left', 'center', 'right'].includes(String(block.align))) {
+        throw new Error(`${label} button alignment must be left, center, or right.`);
+      }
+      for (const [buttonIndex, rawButton] of block.buttons.entries()) {
+        const button = telegramRichRecord(rawButton, `${label} button ${buttonIndex + 1}`);
+        const textLength = telegramRichTextLength(button.text, `${label} button ${buttonIndex + 1} text`);
+        if (!textLength) throw new Error(`${label} button ${buttonIndex + 1} requires text.`);
+        state.characters += textLength;
+        const actions = TELEGRAM_RICH_BUTTON_ACTIONS.filter((key) => button[key] !== undefined);
+        if (actions.length !== 1) throw new Error(`${label} button ${buttonIndex + 1} requires exactly one action.`);
+        if (button.callback_data !== undefined) {
+          const bytes = telegramUtf8Length(String(button.callback_data));
+          if (bytes < 1 || bytes > 64) throw new Error(`${label} button callback data must be 1-64 bytes.`);
+        }
+        if (button.style !== undefined && !['danger', 'success', 'primary', 'link'].includes(String(button.style))) {
+          throw new Error(`${label} button style is unsupported.`);
+        }
+        if (button.style === 'link' && button.callback_data === undefined) {
+          throw new Error(`${label} link style is available only for callback buttons.`);
+        }
+      }
+    }
+    if (type === 'map') {
+      const location = telegramRichRecord(block.location, `${label} location`);
+      const latitude = Number(location.latitude);
+      const longitude = Number(location.longitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        throw new Error(`${label} requires valid latitude and longitude.`);
+      }
+      for (const [key, maximum] of [['zoom', 24], ['width', 10_000], ['height', 10_000]] as const) {
+        if (block[key] !== undefined && (!Number.isSafeInteger(block[key]) || Number(block[key]) < 0 || Number(block[key]) > maximum)) {
+          throw new Error(`${label} ${key} must be an integer from 0 to ${maximum}.`);
+        }
+      }
+      const width = Number(block.width ?? 0);
+      const height = Number(block.height ?? 0);
+      if (width && height && (width + height > 10_000 || Math.max(width / height, height / width) > 20)) {
+        throw new Error(`${label} map dimensions exceed Telegram limits.`);
+      }
+    }
+    if (TELEGRAM_RICH_MEDIA_TYPES.has(type)) {
+      telegramRichMedia(block[type], `${label} ${type}`, mode !== 'send', type);
+      state.media += 1;
+    }
+    if (state.media > TELEGRAM_RICH_MAX_MEDIA) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_MEDIA} media attachments.`);
+    if (state.characters > TELEGRAM_RICH_MAX_CHARACTERS) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_CHARACTERS} characters.`);
+  }
+}
+
+export function buildTelegramRichMessage(value: TelegramInputRichMessage, mode: 'send' | 'draft' | 'edit' = 'send') {
+  const record = telegramRichRecord(value, 'Telegram rich message');
+  const allowed = new Set(['html', 'markdown', 'blocks', 'media', 'isRtl', 'skipEntityDetection']);
+  const unknown = Object.keys(record).find((key) => !allowed.has(key));
+  if (unknown) throw new Error(`Unsupported Telegram rich message field: ${unknown}.`);
+  const contentKeys = ['html', 'markdown', 'blocks'].filter((key) => record[key] !== undefined);
+  if (contentKeys.length !== 1) throw new Error('Telegram rich messages require exactly one of html, markdown, or blocks.');
+  for (const key of ['isRtl', 'skipEntityDetection'] as const) {
+    if (record[key] !== undefined && typeof record[key] !== 'boolean') throw new Error(`Telegram rich message ${key} must be boolean.`);
+  }
+  const state: TelegramRichValidationState = { blocks: 0, media: 0, characters: 0 };
+  const contentKey = contentKeys[0];
+  if (contentKey === 'blocks') telegramRichBlocks(record.blocks, state, mode);
+  else {
+    if (typeof record[contentKey] !== 'string' || !record[contentKey]) throw new Error(`Telegram rich message ${contentKey} must be a non-empty string.`);
+    state.characters = Array.from(record[contentKey] as string).length;
+    if (mode !== 'draft' && /<tg-thinking(?:\s|>)/i.test(record[contentKey] as string)) {
+      throw new Error('Telegram rich thinking blocks are available only in rich message drafts.');
+    }
+  }
+  if (state.characters > TELEGRAM_RICH_MAX_CHARACTERS) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_CHARACTERS} characters.`);
+  let media: Array<{ id: string; media: Record<string, unknown> }> | undefined;
+  if (record.media !== undefined) {
+    if (!Array.isArray(record.media)) throw new Error('Telegram rich message media must be an array.');
+    const ids = new Set<string>();
+    media = record.media.map((raw, index) => {
+      const item = telegramRichRecord(raw, `Telegram rich message media ${index + 1}`);
+      const id = String(item.id ?? '').trim();
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error(`Telegram rich message media ${index + 1} ID must use 1-64 letters, digits, underscores, or hyphens.`);
+      if (ids.has(id)) throw new Error('Telegram rich message media IDs must be unique.');
+      ids.add(id);
+      return { id, media: telegramRichMedia(item.media, `Telegram rich message media ${index + 1}`, mode !== 'send') };
+    });
+    state.media += media.length;
+  }
+  if (state.media > TELEGRAM_RICH_MAX_MEDIA) throw new Error(`Telegram rich messages support at most ${TELEGRAM_RICH_MAX_MEDIA} media attachments.`);
+  return {
+    ...(contentKey === 'html' ? { html: record.html as string } : {}),
+    ...(contentKey === 'markdown' ? { markdown: record.markdown as string } : {}),
+    ...(contentKey === 'blocks' ? { blocks: record.blocks as TelegramInputRichBlock[] } : {}),
+    ...(media === undefined ? {} : { media }),
+    ...(record.isRtl === undefined ? {} : { is_rtl: record.isRtl as boolean }),
+    ...(record.skipEntityDetection === undefined ? {} : { skip_entity_detection: record.skipEntityDetection as boolean }),
+  };
+}
+
+function telegramRichChatId(value: TelegramChatId, draft: true): number;
+function telegramRichChatId(value: TelegramChatId, draft?: false): TelegramChatId;
+function telegramRichChatId(value: TelegramChatId, draft = false): TelegramChatId {
+  if (draft) {
+    const chatId = Number(value);
+    if (!Number.isSafeInteger(chatId) || chatId <= 0) throw new Error('Telegram rich message drafts require a private-chat user ID.');
+    return chatId;
+  }
+  const chatId = typeof value === 'number' ? value : String(value ?? '').trim();
+  if (chatId === '' || (typeof chatId === 'number' && (!Number.isSafeInteger(chatId) || chatId === 0))) {
+    throw new Error('Telegram rich messages require a valid destination chat.');
+  }
+  return chatId;
+}
+
+export function buildTelegramRichMessageSend(
+  chatId: TelegramChatId,
+  richMessage: TelegramInputRichMessage,
+  options: TelegramSendRichMessageOptions = {},
+): TelegramMethodParams['sendRichMessage'] {
+  const record = telegramRichRecord(options, 'Telegram rich message options');
+  const keys = new Set([
+    'businessConnectionId', 'messageThreadId', 'directMessagesTopicId', 'ephemeralMessageParameters',
+    'disableNotification', 'protectContent', 'allowPaidBroadcast', 'messageEffectId', 'suggestedPostParameters',
+    'replyParameters', 'replyMarkup',
+  ]);
+  const unknown = Object.keys(record).find((key) => !keys.has(key));
+  if (unknown) throw new Error(`Unsupported Telegram rich message option: ${unknown}.`);
+  for (const key of ['disableNotification', 'protectContent', 'allowPaidBroadcast'] as const) {
+    if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new Error(`Telegram rich message ${key} must be boolean.`);
+  }
+  const positive = (value: unknown, label: string) => value === undefined ? undefined : telegramPositiveInteger(value, label);
+  const messageThreadId = positive(options.messageThreadId, 'Telegram rich message thread ID');
+  const directMessagesTopicId = positive(options.directMessagesTopicId, 'Telegram rich direct messages topic ID');
+  const businessConnectionId = options.businessConnectionId === undefined ? undefined : String(options.businessConnectionId).trim();
+  if (options.businessConnectionId !== undefined && !businessConnectionId) throw new Error('Telegram rich message business connection ID cannot be empty.');
+  let ephemeral: Record<string, unknown> | undefined;
+  if (options.ephemeralMessageParameters !== undefined) {
+    const value = telegramRichRecord(options.ephemeralMessageParameters, 'Telegram ephemeral message parameters');
+    const unknownEphemeral = Object.keys(value).find((key) => !['receiver_user_id', 'callback_query_id', 'replace_callback_query_message'].includes(key));
+    if (unknownEphemeral) throw new Error(`Unsupported Telegram ephemeral message parameter: ${unknownEphemeral}.`);
+    const receiverUserId = telegramPositiveInteger(value.receiver_user_id, 'Telegram ephemeral receiver user ID');
+    const callbackQueryId = value.callback_query_id === undefined ? undefined : String(value.callback_query_id).trim();
+    if (value.callback_query_id !== undefined && !callbackQueryId) throw new Error('Telegram ephemeral callback query ID cannot be empty.');
+    if (value.replace_callback_query_message !== undefined && typeof value.replace_callback_query_message !== 'boolean') {
+      throw new Error('Telegram ephemeral replace_callback_query_message must be boolean.');
+    }
+    ephemeral = {
+      receiver_user_id: receiverUserId,
+      ...(callbackQueryId === undefined ? {} : { callback_query_id: callbackQueryId }),
+      ...(value.replace_callback_query_message === undefined ? {} : { replace_callback_query_message: value.replace_callback_query_message }),
+    };
+  }
+  for (const [key, value] of [['suggestedPostParameters', options.suggestedPostParameters], ['replyParameters', options.replyParameters], ['replyMarkup', options.replyMarkup]] as const) {
+    if (value !== undefined) telegramRichRecord(value, `Telegram rich message ${key}`);
+  }
+  return {
+    chat_id: telegramRichChatId(chatId), rich_message: buildTelegramRichMessage(richMessage),
+    ...(businessConnectionId === undefined ? {} : { business_connection_id: businessConnectionId }),
+    ...(messageThreadId === undefined ? {} : { message_thread_id: messageThreadId }),
+    ...(directMessagesTopicId === undefined ? {} : { direct_messages_topic_id: directMessagesTopicId }),
+    ...(ephemeral === undefined ? {} : { ephemeral_message_parameters: ephemeral }),
+    ...(options.disableNotification === undefined ? {} : { disable_notification: options.disableNotification }),
+    ...(options.protectContent === undefined ? {} : { protect_content: options.protectContent }),
+    ...(options.allowPaidBroadcast === undefined ? {} : { allow_paid_broadcast: options.allowPaidBroadcast }),
+    ...(options.messageEffectId === undefined ? {} : { message_effect_id: String(options.messageEffectId).trim() }),
+    ...(options.suggestedPostParameters === undefined ? {} : { suggested_post_parameters: options.suggestedPostParameters }),
+    ...(options.replyParameters === undefined ? {} : { reply_parameters: options.replyParameters }),
+    ...(options.replyMarkup === undefined ? {} : { reply_markup: options.replyMarkup }),
+  };
+}
+
+export function buildTelegramRichMessageDraft(
+  chatId: TelegramChatId,
+  draftId: number,
+  richMessage: TelegramInputRichMessage,
+  options: TelegramRichMessageDraftOptions = {},
+): TelegramMethodParams['sendRichMessageDraft'] {
+  const record = telegramRichRecord(options, 'Telegram rich message draft options');
+  const unknown = Object.keys(record).find((key) => !['messageThreadId', 'canStop', 'keepOnStop'].includes(key));
+  if (unknown) throw new Error(`Unsupported Telegram rich message draft option: ${unknown}.`);
+  if (!Number.isSafeInteger(draftId) || draftId === 0) throw new Error('Telegram rich message draft ID must be a non-zero safe integer.');
+  for (const key of ['canStop', 'keepOnStop'] as const) {
+    if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new Error(`Telegram rich message draft ${key} must be boolean.`);
+  }
+  const messageThreadId = options.messageThreadId === undefined ? undefined
+    : telegramPositiveInteger(options.messageThreadId, 'Telegram rich message draft thread ID');
+  return {
+    chat_id: telegramRichChatId(chatId, true), draft_id: draftId, rich_message: buildTelegramRichMessage(richMessage, 'draft'),
+    ...(messageThreadId === undefined ? {} : { message_thread_id: messageThreadId }),
+    ...(options.canStop === undefined ? {} : { can_stop: options.canStop }),
+    ...(options.keepOnStop === undefined ? {} : { keep_on_stop: options.keepOnStop }),
+  };
+}
+
+export function buildTelegramRichMessageEdit(
+  chatId: TelegramChatId,
+  messageId: string | number,
+  richMessage: TelegramInputRichMessage,
+  inlineMessageId?: string,
+): TelegramMethodParams['editMessageText'] {
+  const inline_message_id = inlineMessageId === undefined ? undefined : String(inlineMessageId).trim();
+  if (inlineMessageId !== undefined && !inline_message_id) throw new Error('Telegram inline message ID cannot be empty.');
+  if (inline_message_id) return { inline_message_id, rich_message: buildTelegramRichMessage(richMessage, 'edit') };
+  const message_id = Number(messageId);
+  if (!Number.isSafeInteger(message_id) || message_id <= 0) throw new Error('Telegram rich message edits require a positive message ID.');
+  return {
+    chat_id: telegramRichChatId(chatId), message_id,
+    rich_message: buildTelegramRichMessage(richMessage, 'edit'),
+  };
+}
+
 function telegramChecklistParseMode(value: unknown, label: string) {
   if (value === undefined) return undefined;
   if (value !== 'HTML' && value !== 'MarkdownV2') throw new Error(`${label} must be HTML or MarkdownV2.`);
@@ -849,6 +1271,14 @@ export type TelegramMethodParams = {
   sendPoll: TelegramSendPollParams;
   sendDice: TelegramSendOptions & { chat_id: TelegramChatId; emoji?: string };
   sendMessageDraft: { chat_id: number; draft_id: number; text?: string; message_thread_id?: number; parse_mode?: TelegramParseMode; entities?: TelegramMessageEntity[]; can_stop?: boolean; keep_on_stop?: boolean };
+  sendRichMessage: {
+    chat_id: TelegramChatId; rich_message: ReturnType<typeof buildTelegramRichMessage>;
+    business_connection_id?: string; message_thread_id?: number; direct_messages_topic_id?: number;
+    ephemeral_message_parameters?: Record<string, unknown>; disable_notification?: boolean; protect_content?: boolean;
+    allow_paid_broadcast?: boolean; message_effect_id?: string; suggested_post_parameters?: Record<string, unknown>;
+    reply_parameters?: Record<string, unknown>; reply_markup?: Record<string, unknown>;
+  };
+  sendRichMessageDraft: { chat_id: number; message_thread_id?: number; draft_id: number; rich_message: ReturnType<typeof buildTelegramRichMessage>; can_stop?: boolean; keep_on_stop?: boolean };
   sendChecklist: { business_connection_id: string; chat_id: TelegramChatId; checklist: ReturnType<typeof buildTelegramChecklist>; disable_notification?: boolean; protect_content?: boolean; message_effect_id?: string; reply_parameters?: Record<string, unknown>; reply_markup?: TelegramInlineKeyboardMarkup };
   sendInvoice: TelegramSendOptions & {
     chat_id: TelegramChatId; title: string; description: string; payload: string; provider_token?: string;
@@ -863,7 +1293,7 @@ export type TelegramMethodParams = {
   setMessageReaction: { chat_id: TelegramChatId; message_id: number; reaction?: TelegramReaction[]; is_big?: boolean };
   forwardMessage: { chat_id: TelegramChatId; from_chat_id: TelegramChatId; message_id: number; disable_notification?: boolean; protect_content?: boolean };
   copyMessage: { chat_id: TelegramChatId; from_chat_id: TelegramChatId; message_id: number; caption?: string; parse_mode?: TelegramParseMode };
-  editMessageText: { chat_id?: TelegramChatId; message_id?: number; inline_message_id?: string; text: string; parse_mode?: TelegramParseMode; reply_markup?: TelegramInlineKeyboardMarkup };
+  editMessageText: { chat_id?: TelegramChatId; message_id?: number; inline_message_id?: string; text?: string; parse_mode?: TelegramParseMode; rich_message?: ReturnType<typeof buildTelegramRichMessage>; reply_markup?: TelegramInlineKeyboardMarkup };
   editMessageChecklist: { business_connection_id: string; chat_id: TelegramChatId; message_id: number; checklist: ReturnType<typeof buildTelegramChecklist>; reply_markup?: TelegramInlineKeyboardMarkup };
   deleteMessage: { chat_id: TelegramChatId; message_id: number };
   deleteMessages: { chat_id: TelegramChatId; message_ids: number[] };
@@ -924,6 +1354,9 @@ export interface TelegramApi {
   sendPoll(question: string, options: string[], anonymous?: boolean): Promise<unknown>;
   sendDice(emoji?: string): Promise<unknown>;
   sendMessageDraft(draftId: number, text?: string, options?: TelegramMessageDraftOptions): Promise<boolean>;
+  sendRichMessage(richMessage: TelegramInputRichMessage, options?: TelegramSendRichMessageOptions): Promise<TelegramMessage>;
+  sendRichMessageDraft(draftId: number, richMessage: TelegramInputRichMessage, options?: TelegramRichMessageDraftOptions): Promise<boolean>;
+  editRichMessage(richMessage: TelegramInputRichMessage, messageId?: string | number): Promise<TelegramMessage | boolean>;
   sendChecklist(checklist: TelegramInputChecklist, options?: TelegramSendChecklistOptions): Promise<TelegramMessage>;
   editChecklist(checklist: TelegramInputChecklist, options?: TelegramEditChecklistOptions): Promise<TelegramMessage>;
   sendInvoice(invoice: TelegramInvoiceOptions): Promise<unknown>;
