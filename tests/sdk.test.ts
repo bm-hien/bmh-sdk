@@ -809,6 +809,56 @@ test('gift catalog, Premium, Business Stars, and owned-gift helpers use contextu
   assert.throws(() => context.telegram.transferGift('owned', -1), /positive integer/);
 });
 
+test('bot, chat, member, profile, boost, and Business lookups inherit context with strict queries', async () => {
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input, init) => {
+      const method = String(input).split('/').at(-1)!;
+      calls.push({ method, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json(method === 'getChatMemberCount' ? 42 : method === 'getChatAdministrators' ? [] : {});
+    },
+  });
+  const context = createTelegramContext({
+    update_id: 61,
+    business_message: {
+      business_connection_id: 'business-61', message_id: 610, date: 1,
+      chat: { id: -10061, type: 'supergroup' }, from: telegramUser(61), text: 'lookup',
+    },
+  }, client)!;
+
+  await context.telegram.getMe();
+  await context.telegram.getChat();
+  await context.telegram.getChatAdministrators(true);
+  assert.equal(await context.telegram.getChatMemberCount('@public_channel'), 42);
+  await context.telegram.getChatMember();
+  await context.telegram.getUserProfilePhotos({ offset: 0, limit: 25 });
+  await context.telegram.getUserProfileAudios({ limit: 10 }, 62);
+  await context.telegram.getUserChatBoosts();
+  await context.telegram.getBusinessConnection();
+
+  assert.deepEqual(calls.map((call) => call.method), [
+    'getMe', 'getChat', 'getChatAdministrators', 'getChatMemberCount', 'getChatMember',
+    'getUserProfilePhotos', 'getUserProfileAudios', 'getUserChatBoosts', 'getBusinessConnection',
+  ]);
+  assert.deepEqual(calls[0].body, {});
+  assert.equal(calls[1].body.chat_id, '-10061');
+  assert.equal(calls[2].body.return_bots, true);
+  assert.equal(calls[3].body.chat_id, '@public_channel');
+  assert.equal(calls[4].body.user_id, 61);
+  assert.deepEqual(calls[5].body, { user_id: 61, offset: 0, limit: 25 });
+  assert.deepEqual(calls[6].body, { user_id: 62, limit: 10 });
+  assert.deepEqual(calls[7].body, { chat_id: '-10061', user_id: 61 });
+  assert.deepEqual(calls[8].body, { business_connection_id: 'business-61' });
+
+  assert.throws(() => context.telegram.getChat(0), /non-zero safe integer/);
+  assert.throws(() => context.telegram.getChatAdministrators('yes' as never), /must be boolean/);
+  assert.throws(() => context.telegram.getChatMember(-1), /positive integer/);
+  assert.throws(() => context.telegram.getUserProfilePhotos({ offset: -1 }), /non-negative safe integer/);
+  assert.throws(() => context.telegram.getUserProfileAudios({ limit: 101 }), /integer from 1 to 100/);
+  assert.throws(() => context.telegram.getUserProfilePhotos({ extra: true } as never), /Unsupported Telegram profile photo query option/);
+  assert.throws(() => createTelegramContext(messageUpdate(), client)!.telegram.getBusinessConnection(), /requires a business connection ID/);
+});
+
 test('webhook validates method, secret, JSON, update IDs, and dispatches safely', async () => {
   const replies: string[] = [];
   const bot = new Bot().command('start', (context) => { replies.push(context.text ?? ''); });
