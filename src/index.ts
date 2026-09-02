@@ -80,6 +80,17 @@ export type {
   TelegramAudio,
   TelegramBusinessBotRights,
   TelegramBusinessConnection,
+  TelegramWebhookInfo,
+  TelegramSentWebAppMessage,
+  TelegramResultFor,
+  TelegramMessageId,
+  TelegramKnownMethodResults,
+  TelegramFile,
+  TelegramChatInviteLink,
+  TelegramBotShortDescription,
+  TelegramBotName,
+  TelegramBotDescription,
+  TelegramBotCommand,
   TelegramCallbackQuery,
   TelegramChat,
   TelegramChatAction,
@@ -111,6 +122,7 @@ export type {
   TelegramGiftTextOptions,
   TelegramInputChecklist,
   TelegramInputChecklistTask,
+  TelegramInputFile,
   TelegramInputMedia,
   TelegramInputRichBlock,
   TelegramInputRichMedia,
@@ -163,3 +175,8 @@ export type {
   TelegramUserProfileAudios,
   TelegramUserProfilePhotos,
 } from './telegram';
+
+export { TELEGRAM_METHOD_PARAMETER_SPEC, TELEGRAM_METHOD_RESULT_SPEC } from './telegram-method-params';
+export type { TelegramGeneratedMethodParams, TelegramGeneratedMethodResults } from './telegram-method-params';
+
+export * from './telegram-bot-api-types';

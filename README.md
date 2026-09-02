@@ -386,19 +386,20 @@ specialist methods.
 path, and the runtime stops downstream work after the bot leaves.
 
 The SDK recognizes all 185 Telegram Bot API 10.3 method names and all 27
-update types. Common methods have dedicated parameter types; other methods
-accept `Record<string, unknown>` so new and specialized Telegram features do
-not require a package release before they can be used.
+update types. Every method gets generated required/optional parameter names plus deep parameter/result types from Telegram's API tables. The SDK also exports the generated 365 Bot API object-table types and method-only unions, while common helpers add stricter local validation on top.
 
-For multipart uploads, pass `FormData` and let the Fetch implementation create
-the multipart boundary:
+`TelegramClient.call()` automatically switches to multipart when any parameter
+contains a `Blob` or `File`, including attachments nested inside media arrays:
 
 ```ts
-const form = new FormData();
-form.set('chat_id', '123456789');
-form.set('document', new Blob([bytes]), 'report.pdf');
-await telegram.upload('sendDocument', form);
+await telegram.call('sendDocument', {
+  chat_id: 123456789,
+  document: new Blob([bytes], { type: 'application/pdf' }),
+});
 ```
+
+Use `telegram.upload(method, formData)` when you need manual control over
+multipart field names or `attach://` references.
 
 Use `await telegram.getFileUrl(fileId)` to resolve an API file ID to a download
 URL.
@@ -407,7 +408,7 @@ URL.
 
 Every handler receives a normalized `BotContext`:
 
-- `ctx.update` and `ctx.updateType` retain the typed raw update and its type.
+- `ctx.update` and `ctx.updateType` retain the full Bot API 10.3 payload shape and update type.
 - `ctx.text`, `ctx.messageId`, `ctx.messageThreadId`, and `ctx.callbackData`
   expose common values.
 - `ctx.draftId` identifies the stopped generation preview, while

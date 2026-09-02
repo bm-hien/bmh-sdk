@@ -14,10 +14,12 @@ import type {
   TelegramEphemeralMessageTarget,
   TelegramForumTopic,
   TelegramGifts,
+  TelegramInputFile,
   TelegramMessage,
   TelegramMethod,
   TelegramOwnedGifts,
   TelegramParamsFor,
+  TelegramResultFor,
   TelegramParseMode,
   TelegramStarAmount,
   TelegramUpdate,
@@ -119,6 +121,40 @@ export class TelegramClientError extends Error {
   get migrateToChatId() { return this.parameters?.migrate_to_chat_id; }
 }
 
+
+function telegramMultipartBody(params: Record<string, unknown>) {
+  if (typeof Blob === 'undefined' || typeof FormData === 'undefined') return null;
+  const form = new FormData();
+  const attachments: Array<{ name: string; blob: Blob; filename: string }> = [];
+  const seen = new WeakSet<object>();
+  const encode = (value: unknown): unknown => {
+    if (value instanceof Blob) {
+      const name = `bmh_file_${attachments.length}`;
+      const filename = typeof File !== 'undefined' && value instanceof File && value.name ? value.name : `${name}.bin`;
+      attachments.push({ name, blob: value, filename });
+      return `attach://${name}`;
+    }
+    if (Array.isArray(value)) return value.map(encode);
+    if (value && typeof value === 'object') {
+      if (seen.has(value)) throw new TypeError('Telegram call params must not contain circular references.');
+      seen.add(value);
+      const result = Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => [key, encode(item)]));
+      seen.delete(value);
+      return result;
+    }
+    return value;
+  };
+  const encoded = encode(params) as Record<string, unknown>;
+  if (!attachments.length) return null;
+  for (const [key, value] of Object.entries(encoded)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === 'object') form.set(key, JSON.stringify(value));
+    else form.set(key, String(value));
+  }
+  for (const attachment of attachments) form.set(attachment.name, attachment.blob, attachment.filename);
+  return form;
+}
+
 export class TelegramClient {
   readonly apiRoot: string;
   private readonly token: string;
@@ -182,17 +218,20 @@ export class TelegramClient {
     }
   }
 
-  async call<M extends TelegramMethod, T = unknown>(
+  async call<M extends TelegramMethod, T = TelegramResultFor<M>>(
     method: M,
     params: TelegramParamsFor<M>,
     options: TelegramRequestOptions = {},
   ): Promise<T> {
-    const response = await this.request(method, {
-      method: 'POST',
-      signal: options.signal,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(params ?? {}),
-    });
+    const body = telegramMultipartBody((params ?? {}) as Record<string, unknown>);
+    const response = await this.request(method, body
+      ? { method: 'POST', signal: options.signal, body }
+      : {
+          method: 'POST',
+          signal: options.signal,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(params ?? {}),
+        });
     return this.result<T>(method, response);
   }
 
@@ -266,6 +305,13 @@ function requiredText(value: string, label: string) {
   const result = String(value ?? '').trim();
   if (!result) throw new Error(`${label} is required.`);
   return result;
+}
+
+
+function telegramInputFile(value: TelegramInputFile, label: string) {
+  if (typeof value === 'string') return requiredText(value, label);
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return value;
+  throw new TypeError(`${label} must be a Telegram file ID, URL, attach reference, Blob, or File.`);
 }
 
 function locationCoordinate(value: number, label: string, minimum: number, maximum: number) {
@@ -352,9 +398,9 @@ export function createTelegramContext(
     if (!event.chatId) throw new Error(`Telegram ${event.updateType} updates do not provide a chat for this action.`);
     return event.chatId;
   };
-  const captionBody = (field: string, media: string, caption?: string) => ({
+  const captionBody = (field: string, media: TelegramInputFile, caption?: string) => ({
     chat_id: requireChat(),
-    [field]: requiredText(media, `Telegram ${field}`),
+    [field]: telegramInputFile(media, `Telegram ${field}`),
     ...(caption ? { caption: telegramText(caption, 'Telegram caption', 1024) } : {}),
     ...(caption && options.parseMode ? { parse_mode: options.parseMode } : {}),
     ...sendDefaults,
@@ -388,7 +434,7 @@ export function createTelegramContext(
     successfulPayment: event.successfulPayment,
     user: event.user ? {
       ...event.user,
-      raw: (message?.from ?? update.callback_query?.from) as never,
+      raw: ((message && 'from' in message ? message.from : undefined) ?? update.callback_query?.from) as never,
     } : undefined,
     chat: event.chat ? { ...event.chat, raw: message?.chat as never } : undefined,
     message,
@@ -413,7 +459,7 @@ export function createTelegramContext(
   };
 
   context.telegram = {
-    call<M extends TelegramMethod, T = unknown>(method: M, params: TelegramParamsFor<M>) {
+    call<M extends TelegramMethod, T = TelegramResultFor<M>>(method: M, params: TelegramParamsFor<M>) {
       return client.call<M, T>(method, params);
     },
     getMe() {
@@ -457,7 +503,7 @@ export function createTelegramContext(
     },
     sendPhoto(photo, caption) { return client.call('sendPhoto', captionBody('photo', photo, caption) as never); },
     sendSticker(sticker, emoji) {
-      return client.call('sendSticker', { chat_id: requireChat(), sticker: requiredText(sticker, 'Telegram sticker'), ...(emoji ? { emoji } : {}), ...sendDefaults });
+      return client.call('sendSticker', { chat_id: requireChat(), sticker: telegramInputFile(sticker, 'Telegram sticker'), ...(emoji ? { emoji } : {}), ...sendDefaults });
     },
     sendDocument(document, caption) { return client.call('sendDocument', captionBody('document', document, caption) as never); },
     sendAudio(audio, caption) { return client.call('sendAudio', captionBody('audio', audio, caption) as never); },
@@ -467,7 +513,7 @@ export function createTelegramContext(
     sendVideoNote(videoNote) {
       return client.call('sendVideoNote', {
         chat_id: requireChat(),
-        video_note: requiredText(videoNote, 'Telegram video note'),
+        video_note: telegramInputFile(videoNote, 'Telegram video note'),
         ...sendDefaults,
       });
     },

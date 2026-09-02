@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { TELEGRAM_METHOD_PARAMETER_SPEC, TELEGRAM_METHOD_RESULT_SPEC } from '../src/telegram-method-params';
 import {
   Bot,
   createTelegramContext,
@@ -15,12 +16,23 @@ import {
   TELEGRAM_METHODS,
   TELEGRAM_RUNTIME_MANAGED_METHODS,
   TELEGRAM_UPDATE_TYPES,
+  type TelegramChatInviteLink,
+  type TelegramBotApiStory,
+  type TelegramBotApiStickerSet,
+  type TelegramBotApiPreparedKeyboardButton,
+  type TelegramBotApiBotAccessSettings,
+  type TelegramMessage,
   type TelegramMethod,
+  type TelegramUser,
   type TelegramUpdate,
 } from '../src/index';
 
 function telegramUser(id = 7) {
   return { id, is_bot: false, first_name: 'Minh', username: 'minh' };
+}
+
+function shippingAddress() {
+  return { country_code: 'US', state: 'CA', city: 'San Francisco', street_line1: '1 Market St', street_line2: '', post_code: '94105' };
 }
 
 function messageUpdate(updateId = 1, text = '/start'): TelegramUpdate {
@@ -89,6 +101,8 @@ function json(result: unknown, init: ResponseInit = {}) {
 
 test('Telegram catalogs match Bot API 10.3 coverage without duplicates', () => {
   assert.equal(TELEGRAM_METHODS.length, 185);
+  assert.deepEqual(Object.keys(TELEGRAM_METHOD_PARAMETER_SPEC), [...TELEGRAM_METHODS]);
+  assert.deepEqual(Object.keys(TELEGRAM_METHOD_RESULT_SPEC), [...TELEGRAM_METHODS]);
   assert.equal(new Set(TELEGRAM_METHODS).size, 185);
   assert.equal(TELEGRAM_UPDATE_TYPES.length, 27);
   assert.equal(new Set(TELEGRAM_UPDATE_TYPES).size, 27);
@@ -135,7 +149,7 @@ test('parser normalizes commands, mentions, captions, callbacks, and chatless up
 
   const pollAnswer = parseTelegramUpdate({
     update_id: 3,
-    poll_answer: { poll_id: 'poll', user: telegramUser(99), option_ids: [0] },
+    poll_answer: { poll_id: 'poll', user: telegramUser(99), option_ids: [0], option_persistent_ids: [] },
   });
   assert.equal(pollAnswer?.updateType, 'poll_answer');
   assert.equal(pollAnswer?.user?.id, '99');
@@ -151,7 +165,7 @@ test('parser normalizes commands, mentions, captions, callbacks, and chatless up
 
 test('parser exposes dedicated lifecycle IDs for inline, shipping, pre-checkout, and guest queries', () => {
   const inline = parseTelegramUpdate({ update_id: 10, inline_query: { id: 'inline-10', from: telegramUser(), query: '', offset: '' } });
-  const shipping = parseTelegramUpdate({ update_id: 11, shipping_query: { id: 'shipping-11', from: telegramUser(), invoice_payload: 'order', shipping_address: {} } });
+  const shipping = parseTelegramUpdate({ update_id: 11, shipping_query: { id: 'shipping-11', from: telegramUser(), invoice_payload: 'order', shipping_address: shippingAddress() } });
   const checkout = parseTelegramUpdate({ update_id: 12, pre_checkout_query: { id: 'checkout-12', from: telegramUser(), currency: 'USD', total_amount: 500, invoice_payload: 'order' } });
   const guest = parseTelegramUpdate({
     update_id: 13,
@@ -191,6 +205,40 @@ test('parser rejects malformed, ambiguous, and unknown-only updates', () => {
     callback_query: callbackUpdate().callback_query,
   }), null);
   assert.equal(parseTelegramUpdate({ update_id: 4, future_update: {} }), null);
+});
+
+test('TelegramClient.call transports every Bot API 10.3 method in the catalog', async () => {
+  const seen: string[] = [];
+  const client = new TelegramClient('123:test', {
+    fetch: async (input) => { seen.push(String(input).split('/').at(-1)!); return json(true); },
+  });
+  for (const method of TELEGRAM_METHODS) await client.call(method, {} as never);
+  assert.deepEqual(seen, [...TELEGRAM_METHODS]);
+});
+
+test('TelegramClient.call infers current method params and result types', () => {
+  const client = new TelegramClient('123:test', { fetch: async () => json(true) });
+  if (false) {
+    const me: Promise<TelegramUser> = client.call('getMe', {});
+    const sent: Promise<TelegramMessage> = client.call('sendMessage', { chat_id: 1, text: 'hi' });
+    const webhook: Promise<boolean> = client.call('setWebhook', { url: 'https://example.com/hook' });
+    const invite: Promise<TelegramChatInviteLink> = client.call('createChatInviteLink', { chat_id: -1001 });
+    const livePhoto: Promise<TelegramMessage> = client.call('sendLivePhoto', { chat_id: 1, live_photo: new Blob(['mov']), photo: new Blob(['jpg']) });
+    const stickerSet: Promise<TelegramBotApiStickerSet> = client.call('getStickerSet', { name: 'pack_by_bot' });
+    const access: Promise<TelegramBotApiBotAccessSettings> = client.call('getManagedBotAccessSettings', { user_id: 7 });
+    const story: Promise<TelegramBotApiStory> = client.call('postStory', {
+      business_connection_id: 'business-1', content: { type: 'photo', photo: new Blob(['jpg']) }, active_period: 86400,
+    });
+    const preparedButton: Promise<TelegramBotApiPreparedKeyboardButton> = client.call('savePreparedKeyboardButton', {
+      user_id: 7, button: { text: 'Open' },
+    });
+    void me; void sent; void webhook; void invite; void livePhoto; void stickerSet; void access; void story; void preparedButton;
+    // @ts-expect-error Bot API 10.3 requires a string webhook URL.
+    client.call('setWebhook', { url: 123 });
+    // @ts-expect-error sendLivePhoto requires both live_photo and photo.
+    client.call('sendLivePhoto', { chat_id: 1, live_photo: 'file-id' });
+  }
+  assert.ok(true);
 });
 
 test('TelegramClient sends typed JSON and unwraps successful results', async () => {
@@ -271,6 +319,45 @@ test('multipart uploads leave boundary headers to Fetch and file URLs encode pat
     await client.getFileUrl('file-id'),
     'https://api.telegram.org/file/bot123:test/reports/a%20file.pdf',
   );
+});
+
+test('TelegramClient.call auto-encodes nested InputFile values as multipart attachments', async () => {
+  let requestInit: RequestInit | undefined;
+  const client = new TelegramClient('123:test', {
+    fetch: async (_input, init = {}) => { requestInit = init; return json(true); },
+  });
+  const photo = new Blob(['photo'], { type: 'image/jpeg' });
+  await client.call('sendMediaGroup', {
+    chat_id: 1,
+    media: [{ type: 'photo', media: photo, caption: 'hello' }],
+  });
+  assert.ok(requestInit?.body instanceof FormData);
+  assert.equal(requestInit?.headers, undefined);
+  const form = requestInit.body as FormData;
+  assert.match(String(form.get('media')), /attach:\/\/bmh_file_0/);
+  assert.ok(form.get('bmh_file_0') instanceof Blob);
+});
+
+test('context media helpers accept Blob InputFile values', async () => {
+  let requestInit: RequestInit | undefined;
+  const client = new TelegramClient('123:test', {
+    fetch: async (_input, init = {}) => { requestInit = init; return json(true); },
+  });
+  const context = createTelegramContext(messageUpdate(), client);
+  assert.ok(context);
+  await context.telegram.sendDocument(new Blob(['report'], { type: 'application/pdf' }), 'Report');
+  assert.ok(requestInit?.body instanceof FormData);
+  const form = requestInit.body as FormData;
+  assert.equal(form.get('document'), 'attach://bmh_file_0');
+  assert.ok(form.get('bmh_file_0') instanceof Blob);
+});
+
+test('Telegram method catalog pins the full Bot API 10.3 surface', () => {
+  assert.equal(TELEGRAM_METHODS.length, 185);
+  assert.deepEqual(Object.keys(TELEGRAM_METHOD_PARAMETER_SPEC), [...TELEGRAM_METHODS]);
+  for (const method of ['sendRichMessage', 'sendLivePhoto', 'answerChatJoinRequestQuery', 'getManagedBotAccessSettings', 'deleteAllMessageReactions']) {
+    assert.ok(TELEGRAM_METHODS.includes(method as never), `missing ${method}`);
+  }
 });
 
 test('context helpers validate and map message actions to Bot API requests', async () => {
@@ -663,7 +750,7 @@ test('query helpers build valid payloads, reject invalid combinations, and answe
     },
   });
   const inline = createTelegramContext({ update_id: 20, inline_query: { id: 'inline-20', from: telegramUser(), query: '', offset: '' } }, client);
-  const shipping = createTelegramContext({ update_id: 21, shipping_query: { id: 'shipping-21', from: telegramUser(), invoice_payload: 'order', shipping_address: {} } }, client);
+  const shipping = createTelegramContext({ update_id: 21, shipping_query: { id: 'shipping-21', from: telegramUser(), invoice_payload: 'order', shipping_address: shippingAddress() } }, client);
   const checkout = createTelegramContext({ update_id: 22, pre_checkout_query: { id: 'checkout-22', from: telegramUser(), currency: 'USD', total_amount: 500, invoice_payload: 'order' } }, client);
   const guest = createTelegramContext({
     update_id: 23,
@@ -691,8 +778,8 @@ test('query helpers build valid payloads, reject invalid combinations, and answe
 
   await assert.rejects(() => inline.telegram.answerInlineQuery([]), /already been answered/);
   assert.throws(() => createTelegramContext(messageUpdate(), client)!.telegram.answerInlineQuery([]), /matching Telegram query handler/);
-  assert.throws(() => createTelegramContext({ update_id: 24, shipping_query: { id: 'shipping-24' } }, client)!.telegram.answerShippingQuery(true), /requires at least one shipping option/);
-  assert.throws(() => createTelegramContext({ update_id: 25, pre_checkout_query: { id: 'checkout-25' } }, client)!.telegram.answerPreCheckoutQuery(false), /requires an error message/);
+  assert.throws(() => createTelegramContext({ update_id: 24, shipping_query: { id: 'shipping-24' } } as never, client)!.telegram.answerShippingQuery(true), /requires at least one shipping option/);
+  assert.throws(() => createTelegramContext({ update_id: 25, pre_checkout_query: { id: 'checkout-25' } } as never, client)!.telegram.answerPreCheckoutQuery(false), /requires an error message/);
   assert.throws(() => createTelegramContext({ update_id: 26, guest_message: { message_id: 26, date: 1, chat: { id: 1, type: 'private' }, guest_query_id: 'guest-26' } }, client)!.telegram.answerGuestQuery({ type: '', id: 'x' }), /type is required/);
 });
 

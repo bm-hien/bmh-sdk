@@ -1,3 +1,6 @@
+import type { TelegramGeneratedMethodParams, TelegramGeneratedMethodResults } from './telegram-method-params';
+import type { TelegramBotApiType } from './telegram-bot-api-types';
+
 /** Telegram Bot API 10.3 types and method catalogs used by the public SDK. */
 
 export const TELEGRAM_UPDATE_TYPES = [
@@ -37,6 +40,7 @@ export const TELEGRAM_EVENT_TYPES = [...TELEGRAM_UPDATE_TYPES, ...TELEGRAM_MESSA
 export type TelegramMessageEventType = typeof TELEGRAM_MESSAGE_EVENT_TYPES[number];
 export type TelegramEventType = typeof TELEGRAM_EVENT_TYPES[number];
 export type TelegramChatId = number | string;
+export type TelegramInputFile = string | Blob;
 export type TelegramParseMode = 'HTML' | 'MarkdownV2';
 export type TelegramChatAction = 'typing' | 'upload_photo' | 'record_video' | 'upload_video' | 'record_voice' |
   'upload_voice' | 'upload_document' | 'choose_sticker' | 'find_location' | 'record_video_note' | 'upload_video_note';
@@ -93,6 +97,23 @@ export type TelegramAudio = {
 };
 export type TelegramUserProfilePhotos = { total_count: number; photos: TelegramPhotoSize[][] };
 export type TelegramUserProfileAudios = { total_count: number; audios: TelegramAudio[] };
+export type TelegramMessageId = { message_id: number };
+export type TelegramFile = { file_id: string; file_unique_id: string; file_size?: number; file_path?: string };
+export type TelegramWebhookInfo = {
+  url: string; has_custom_certificate: boolean; pending_update_count: number; ip_address?: string;
+  last_error_date?: number; last_error_message?: string; last_synchronization_error_date?: number;
+  max_connections?: number; allowed_updates?: string[];
+};
+export type TelegramChatInviteLink = {
+  invite_link: string; creator: TelegramUser; creates_join_request: boolean; is_primary: boolean; is_revoked: boolean;
+  name?: string; expire_date?: number; member_limit?: number; pending_join_request_count?: number;
+  subscription_period?: number; subscription_price?: number;
+};
+export type TelegramBotCommand = { command: string; description: string };
+export type TelegramBotName = { name: string };
+export type TelegramBotDescription = { description: string };
+export type TelegramBotShortDescription = { short_description: string };
+export type TelegramSentWebAppMessage = { inline_message_id?: string };
 export type TelegramProfileListOptions = { offset?: number; limit?: number };
 
 export type TelegramChatMemberOwner = {
@@ -200,33 +221,7 @@ export type TelegramMessageEntity = {
   custom_emoji_id?: string;
 };
 
-export type TelegramMessage = {
-  message_id: number;
-  ephemeral_message_id?: number;
-  date: number;
-  chat: TelegramChat;
-  from?: TelegramUser;
-  sender_chat?: TelegramChat;
-  text?: string;
-  entities?: TelegramMessageEntity[];
-  caption?: string;
-  caption_entities?: TelegramMessageEntity[];
-  message_thread_id?: number;
-  reply_to_message?: TelegramMessage;
-  photo?: Array<{ file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }>;
-  audio?: Record<string, unknown>;
-  document?: Record<string, unknown>;
-  animation?: Record<string, unknown>;
-  video?: Record<string, unknown>;
-  voice?: Record<string, unknown>;
-  video_note?: Record<string, unknown>;
-  contact?: Record<string, unknown>;
-  location?: { latitude: number; longitude: number; horizontal_accuracy?: number };
-  venue?: Record<string, unknown>;
-  poll?: Record<string, unknown>;
-  successful_payment?: TelegramSuccessfulPayment;
-  [key: string]: unknown;
-};
+export type TelegramMessage = TelegramBotApiType<'Message'> & { [key: string]: unknown };
 
 export type TelegramSuccessfulPayment = {
   currency: string;
@@ -241,47 +236,9 @@ export type TelegramSuccessfulPayment = {
   subscription_expiration_date?: number;
 };
 
-export type TelegramCallbackQuery = {
-  id: string;
-  from: TelegramUser;
-  chat_instance: string;
-  message?: TelegramMessage;
-  inline_message_id?: string;
-  data?: string;
-  game_short_name?: string;
-};
+export type TelegramCallbackQuery = TelegramBotApiType<'CallbackQuery'>;
 
-export type TelegramUpdate = {
-  update_id: number;
-  message?: TelegramMessage;
-  edited_message?: TelegramMessage;
-  channel_post?: TelegramMessage;
-  edited_channel_post?: TelegramMessage;
-  business_message?: TelegramMessage;
-  edited_business_message?: TelegramMessage;
-  guest_message?: TelegramMessage;
-  business_connection?: Record<string, unknown>;
-  deleted_business_messages?: Record<string, unknown>;
-  message_reaction?: Record<string, unknown>;
-  message_reaction_count?: Record<string, unknown>;
-  inline_query?: Record<string, unknown>;
-  chosen_inline_result?: Record<string, unknown>;
-  callback_query?: TelegramCallbackQuery;
-  shipping_query?: Record<string, unknown>;
-  pre_checkout_query?: Record<string, unknown>;
-  purchased_paid_media?: Record<string, unknown>;
-  poll?: Record<string, unknown>;
-  poll_answer?: Record<string, unknown>;
-  my_chat_member?: Record<string, unknown>;
-  chat_member?: Record<string, unknown>;
-  chat_join_request?: Record<string, unknown>;
-  chat_boost?: Record<string, unknown>;
-  removed_chat_boost?: Record<string, unknown>;
-  managed_bot?: Record<string, unknown>;
-  subscription?: Record<string, unknown>;
-  stopped_message_generation?: Record<string, unknown>;
-  [key: string]: unknown;
-};
+export type TelegramUpdate = TelegramBotApiType<'Update'> & { [key: string]: unknown };
 
 export type TelegramInlineKeyboardButton = {
   text: string;
@@ -342,13 +299,13 @@ export type TelegramSendMediaParams = TelegramSendOptions & {
   show_caption_above_media?: boolean;
   has_spoiler?: boolean;
 };
-export type TelegramSendPhotoParams = TelegramSendMediaParams & { photo: string };
-export type TelegramSendDocumentParams = TelegramSendMediaParams & { document: string; disable_content_type_detection?: boolean };
-export type TelegramSendAudioParams = TelegramSendMediaParams & { audio: string; duration?: number; performer?: string; title?: string; thumbnail?: string };
-export type TelegramSendVideoParams = TelegramSendMediaParams & { video: string; duration?: number; width?: number; height?: number; thumbnail?: string; supports_streaming?: boolean };
-export type TelegramSendAnimationParams = TelegramSendMediaParams & { animation: string; duration?: number; width?: number; height?: number; thumbnail?: string };
-export type TelegramSendVoiceParams = TelegramSendMediaParams & { voice: string; duration?: number };
-export type TelegramSendVideoNoteParams = TelegramSendOptions & { chat_id: TelegramChatId; video_note: string; duration?: number; length?: number; thumbnail?: string };
+export type TelegramSendPhotoParams = TelegramSendMediaParams & { photo: TelegramInputFile };
+export type TelegramSendDocumentParams = TelegramSendMediaParams & { document: TelegramInputFile; disable_content_type_detection?: boolean };
+export type TelegramSendAudioParams = TelegramSendMediaParams & { audio: TelegramInputFile; duration?: number; performer?: string; title?: string; thumbnail?: TelegramInputFile };
+export type TelegramSendVideoParams = TelegramSendMediaParams & { video: TelegramInputFile; duration?: number; width?: number; height?: number; thumbnail?: TelegramInputFile; supports_streaming?: boolean };
+export type TelegramSendAnimationParams = TelegramSendMediaParams & { animation: TelegramInputFile; duration?: number; width?: number; height?: number; thumbnail?: TelegramInputFile };
+export type TelegramSendVoiceParams = TelegramSendMediaParams & { voice: TelegramInputFile; duration?: number };
+export type TelegramSendVideoNoteParams = TelegramSendOptions & { chat_id: TelegramChatId; video_note: TelegramInputFile; duration?: number; length?: number; thumbnail?: TelegramInputFile };
 export type TelegramSendLocationParams = TelegramSendOptions & { chat_id: TelegramChatId; latitude: number; longitude: number; horizontal_accuracy?: number; live_period?: number; heading?: number; proximity_alert_radius?: number };
 export type TelegramSendVenueParams = TelegramSendLocationParams & { title: string; address: string; foursquare_id?: string; foursquare_type?: string; google_place_id?: string; google_place_type?: string };
 export type TelegramSendContactParams = TelegramSendOptions & { chat_id: TelegramChatId; phone_number: string; first_name: string; last_name?: string; vcard?: string };
@@ -432,7 +389,7 @@ export type TelegramRichText = string | TelegramRichText[] | ({
 } & Record<string, unknown>);
 export type TelegramInputRichMedia = {
   type: 'animation' | 'audio' | 'document' | 'photo' | 'video' | 'voice_note';
-  media: string;
+  media: TelegramInputFile;
   [key: string]: unknown;
 };
 export type TelegramInputRichMessageMedia = {
@@ -532,8 +489,8 @@ export type TelegramEphemeralMessageTarget = {
 };
 export type TelegramInputMedia = {
   type: 'animation' | 'audio' | 'document' | 'live_photo' | 'photo' | 'video';
-  media: string;
-  thumbnail?: string;
+  media: TelegramInputFile;
+  thumbnail?: TelegramInputFile;
   caption?: string;
   parse_mode?: TelegramParseMode;
   caption_entities?: TelegramMessageEntity[];
@@ -2119,7 +2076,7 @@ export type TelegramMethod = typeof TELEGRAM_METHODS[number];
 export type TelegramMethodParams = {
   sendMessage: TelegramSendMessageParams;
   sendPhoto: TelegramSendPhotoParams;
-  sendSticker: TelegramSendOptions & { chat_id: TelegramChatId; sticker: string; emoji?: string };
+  sendSticker: TelegramSendOptions & { chat_id: TelegramChatId; sticker: TelegramInputFile; emoji?: string };
   sendDocument: TelegramSendDocumentParams;
   sendAudio: TelegramSendAudioParams;
   sendVideo: TelegramSendVideoParams;
@@ -2251,12 +2208,46 @@ export type TelegramMethodParams = {
   leaveChat: { chat_id: TelegramChatId };
 };
 
-export type TelegramParamsFor<M extends TelegramMethod> = M extends keyof TelegramMethodParams
-  ? TelegramMethodParams[M]
-  : Record<string, unknown>;
+export type TelegramKnownMethodResults = {
+  getUpdates: TelegramUpdate[];
+  getWebhookInfo: TelegramWebhookInfo;
+  getMe: TelegramUser;
+  sendMessage: TelegramMessage; forwardMessage: TelegramMessage; sendPhoto: TelegramMessage; sendLivePhoto: TelegramMessage;
+  sendAudio: TelegramMessage; sendDocument: TelegramMessage; sendVideo: TelegramMessage; sendAnimation: TelegramMessage;
+  sendVoice: TelegramMessage; sendVideoNote: TelegramMessage; sendPaidMedia: TelegramMessage; sendLocation: TelegramMessage;
+  sendVenue: TelegramMessage; sendContact: TelegramMessage; sendPoll: TelegramMessage; sendChecklist: TelegramMessage;
+  sendDice: TelegramMessage; sendSticker: TelegramMessage; sendRichMessage: TelegramMessage; sendInvoice: TelegramMessage; sendGame: TelegramMessage;
+  forwardMessages: TelegramMessageId[]; copyMessage: TelegramMessageId; copyMessages: TelegramMessageId[]; sendMediaGroup: TelegramMessage[];
+  getUserProfilePhotos: TelegramUserProfilePhotos; getUserProfileAudios: TelegramUserProfileAudios; getFile: TelegramFile;
+  createChatInviteLink: TelegramChatInviteLink; editChatInviteLink: TelegramChatInviteLink;
+  createChatSubscriptionInviteLink: TelegramChatInviteLink; editChatSubscriptionInviteLink: TelegramChatInviteLink; revokeChatInviteLink: TelegramChatInviteLink;
+  getChat: TelegramChatFullInfo; getChatAdministrators: TelegramChatMember[]; getChatMemberCount: number; getChatMember: TelegramChatMember;
+  getUserPersonalChatMessages: TelegramMessage[]; createForumTopic: TelegramForumTopic; getUserChatBoosts: TelegramUserChatBoosts;
+  getBusinessConnection: TelegramBusinessConnection; getMyCommands: TelegramBotCommand[]; getMyName: TelegramBotName;
+  getMyDescription: TelegramBotDescription; getMyShortDescription: TelegramBotShortDescription;
+  getMyDefaultAdministratorRights: TelegramAdministratorRights; getAvailableGifts: TelegramGifts;
+  getBusinessAccountStarBalance: TelegramStarAmount; getBusinessAccountGifts: TelegramOwnedGifts; getUserGifts: TelegramOwnedGifts; getChatGifts: TelegramOwnedGifts;
+  answerWebAppQuery: TelegramSentWebAppMessage;
+  editMessageText: TelegramMessage | boolean; editMessageCaption: TelegramMessage | boolean; editMessageMedia: TelegramMessage | boolean;
+  editMessageLiveLocation: TelegramMessage | boolean; stopMessageLiveLocation: TelegramMessage | boolean; editMessageReplyMarkup: TelegramMessage | boolean;
+  editMessageChecklist: TelegramMessage; setGameScore: TelegramMessage | boolean;
+  getMyStarBalance: TelegramStarAmount;
+};
+
+export type TelegramResultFor<M extends TelegramMethod> = M extends keyof TelegramKnownMethodResults
+  ? TelegramKnownMethodResults[M]
+  : M extends keyof TelegramGeneratedMethodResults
+    ? TelegramGeneratedMethodResults[M]
+    : never;
+
+export type TelegramParamsFor<M extends TelegramMethod> = M extends keyof TelegramGeneratedMethodParams
+  ? M extends keyof TelegramMethodParams
+    ? TelegramMethodParams[M] & Omit<TelegramGeneratedMethodParams[M], keyof TelegramMethodParams[M]>
+    : TelegramGeneratedMethodParams[M]
+  : never;
 
 export interface TelegramApi {
-  call<M extends TelegramMethod, T = unknown>(method: M, params: TelegramParamsFor<M>): Promise<T>;
+  call<M extends TelegramMethod, T = TelegramResultFor<M>>(method: M, params: TelegramParamsFor<M>): Promise<T>;
   getMe(): Promise<TelegramUser>;
   getChat(chatId?: TelegramChatId): Promise<TelegramChatFullInfo>;
   getChatAdministrators(returnBots?: boolean, chatId?: TelegramChatId): Promise<TelegramChatMember[]>;
@@ -2266,14 +2257,14 @@ export interface TelegramApi {
   getUserProfileAudios(options?: TelegramProfileListOptions, userId?: string | number): Promise<TelegramUserProfileAudios>;
   getUserChatBoosts(userId?: string | number, chatId?: TelegramChatId): Promise<TelegramUserChatBoosts>;
   getBusinessConnection(businessConnectionId?: string): Promise<TelegramBusinessConnection>;
-  sendPhoto(photo: string, caption?: string): Promise<unknown>;
-  sendSticker(sticker: string, emoji?: string): Promise<unknown>;
-  sendDocument(document: string, caption?: string): Promise<unknown>;
-  sendAudio(audio: string, caption?: string): Promise<unknown>;
-  sendVideo(video: string, caption?: string): Promise<unknown>;
-  sendAnimation(animation: string, caption?: string): Promise<unknown>;
-  sendVoice(voice: string, caption?: string): Promise<unknown>;
-  sendVideoNote(videoNote: string): Promise<unknown>;
+  sendPhoto(photo: TelegramInputFile, caption?: string): Promise<unknown>;
+  sendSticker(sticker: TelegramInputFile, emoji?: string): Promise<unknown>;
+  sendDocument(document: TelegramInputFile, caption?: string): Promise<unknown>;
+  sendAudio(audio: TelegramInputFile, caption?: string): Promise<unknown>;
+  sendVideo(video: TelegramInputFile, caption?: string): Promise<unknown>;
+  sendAnimation(animation: TelegramInputFile, caption?: string): Promise<unknown>;
+  sendVoice(voice: TelegramInputFile, caption?: string): Promise<unknown>;
+  sendVideoNote(videoNote: TelegramInputFile): Promise<unknown>;
   sendLocation(latitude: number, longitude: number): Promise<unknown>;
   sendVenue(latitude: number, longitude: number, title: string, address: string): Promise<unknown>;
   sendContact(phoneNumber: string, firstName: string, lastName?: string): Promise<unknown>;
